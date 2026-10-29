@@ -275,7 +275,7 @@ class MultiplayerState extends MusicBeatState
 
 	function errorOf(json:Dynamic):String
 	{
-		var e:Dynamic = Reflect.field(json, 'error');
+		var e:Dynamic = Reflect.field(json, 'message');
 		return e == null ? 'Erro desconhecido.' : Std.string(e);
 	}
 
@@ -580,7 +580,7 @@ class MultiplayerState extends MusicBeatState
 		switch (ev.kind)
 		{
 			case 'login' | 'register':
-				if ((ev.status == 200 || ev.status == 201) && ev.json.ok == true)
+				if ((ev.status == 200 || ev.status == 201) && ev.json.success == true)
 				{
 					showMode('lobby');
 					setStatus('Escolha um servidor ou crie um.');
@@ -597,13 +597,13 @@ class MultiplayerState extends MusicBeatState
 				setStatus('Você saiu da conta.');
 
 			case 'list':
-				if (ev.status == 200 && ev.json.ok == true)
+				if (ev.status == 200 && ev.json.success == true)
 					fillSlots(cast ev.json.rooms);
 				else
 					setStatus(errorOf(ev.json));
 
 			case 'create':
-				if (ev.status == 201 && ev.json.ok == true)
+				if (ev.status == 201 && ev.json.success == true)
 				{
 					pendingJoin = {roomId: ev.json.roomId, password: pendingPassword};
 					connectSocket();
