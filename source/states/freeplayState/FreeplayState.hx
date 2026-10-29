@@ -20,6 +20,8 @@ import options.OptionsState;
 import states.mainMenuState.MainMenuState;
 import states.storyMenuState.StoryMenuState;
 import states.modsMenuState.ModsMenuState;
+import states.onlineModsState.OnlineModsState;
+import states.multiplayerState.MultiplayerState;
 import states.freeplayState.backend.*;
 import states.freeplayState.objects.detail.*;
 import states.freeplayState.objects.down.*;
@@ -129,8 +131,8 @@ class FreeplayState extends MusicBeatState
 
 	///////////////////////////////////////////////////////////////////////////////////////////////
 
-	var funcData:Array<String> = ['options', 'mod', 'changer', 'editor', 'reset', 'random'];
-	var funcColors:Array<FlxColor> = [0x63d6ff, 0xd1fc52, 0xff354e, 0xff617e, 0xfd6dff, 0x6dff6d];
+	var funcData:Array<String> = ['options', 'mod', 'onlinemods', 'multiplayer', 'changer', 'editor', 'reset', 'random'];
+	var funcColors:Array<FlxColor> = [0x63d6ff, 0xd1fc52, 0x52fcc0, 0x9d6dff, 0xff354e, 0xff617e, 0xfd6dff, 0x6dff6d];
 	var downBG:Rect;
 	var backRect:BackButton;
 	var funcGroup:Array<FuncButton> = [];
@@ -486,7 +488,8 @@ class FreeplayState extends MusicBeatState
 
 		for (data in 0...funcData.length)
 		{
-			var button = new FuncButton(backRect.x + backRect.width + 10 + (140 + 20) * data, backRect.y, funcData[data], funcColors[data]);
+			var labelText:String = switch (funcData[data]) { case 'onlinemods': 'ONLINE'; case 'multiplayer': 'MULTI'; default: null; };
+				var button = new FuncButton(backRect.x + backRect.width + 10 + Math.min(160, (FlxG.width - backRect.x - backRect.width - 170) / Math.max(1, funcData.length - 1)) * data, backRect.y, funcData[data], funcColors[data], labelText, labelText == null ? null : 'mod');
 			add(button);
 			funcGroup.push(button);
 			button.id = data;
@@ -504,6 +507,7 @@ class FreeplayState extends MusicBeatState
 
 		//////////////////////////////////////////////////////////////////////////////////////////
 
+		general.backend.MpMatch.reset();
 		WeekData.setDirectoryFromWeek();
 		if (songGroup != null && songGroup[curSelected] != null) songGroup[curSelected].changeSelectAll(true);
 
@@ -530,10 +534,25 @@ class FreeplayState extends MusicBeatState
 				MusicBeatState.switchState(new OptionsState()); 
 			};
 			case 'mod':
-				return function() { 
-				stopAll = true; 
+				return function() {
+				stopAll = true;
 				ModsMenuState.isFreePlay = true;
-				MusicBeatState.switchState(new ModsMenuState()); 			
+				MusicBeatState.switchState(new ModsMenuState());
+			};
+			case 'onlinemods':
+				return function() {
+				stopAll = true;
+				MusicBeatState.switchState(new OnlineModsState());
+			};
+			case 'multiplayer':
+				return function() {
+				stopAll = true;
+				general.backend.MpMatch.pendingSong = {
+					name: songsData[curSelected].songName,
+					difficulty: curDifficulty < 0 ? 0 : curDifficulty,
+					mod: general.backend.Mods.currentModDirectory
+				};
+				MusicBeatState.switchState(new MultiplayerState());
 			};
 			case 'changer':
 				return function() { 
