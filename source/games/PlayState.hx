@@ -38,6 +38,8 @@ import developer.editors.CharacterEditorState;
 
 import substates.PauseSubState;
 import substates.GameOverSubstate;
+import general.backend.MpMatch;
+import states.multiplayerState.MultiplayerState;
 import substates.ResultsScreen;
 
 import general.shaders.ErrorHandledShader;
@@ -416,6 +418,8 @@ class PlayState extends MusicBeatState
 		instakillOnMiss = ClientPrefs.getGameplaySetting('instakill');
 		practiceMode = ClientPrefs.getGameplaySetting('practice');
 		cpuControlled = ClientPrefs.getGameplaySetting('botplay');
+		if (MpMatch.active)
+			cpuControlled = MpMatch.botplay;
 		cpuControlled_opponent = ClientPrefs.getGameplaySetting('botplay');
 		guitarHeroSustains = ClientPrefs.data.guitarHeroSustains;
 		if (ClientPrefs.data.playOpponent)
@@ -703,6 +707,8 @@ class PlayState extends MusicBeatState
 		scoreTxt.borderSize = 1.25;
 		scoreTxt.visible = !ClientPrefs.data.hideHud;
 		add(scoreTxt);
+		if (MpMatch.active)
+			add(MpMatch.createHud());
 
 		judgementCounter_S = new JudgementCounter(10, 0);
 		judgementCounter_S.visible = (ClientPrefs.data.judgementCounter
@@ -2468,6 +2474,8 @@ class PlayState extends MusicBeatState
 
 	override function update(elapsed:Float)
 	{
+		if (MpMatch.active || MpMatch.returning)
+			MpMatch.tick();
 		if (ClientPrefs.data.pauseButton)
 		{
 			var Pressed:Bool = (pauseButton_menu != null && pauseButton_menu.touchJustPressed(camPause));
@@ -3455,6 +3463,12 @@ class PlayState extends MusicBeatState
 	{
 		if (mobileControls != null)
 			mobileControls.visible = false;
+		if (MpMatch.active)
+		{
+			MpMatch.finish();
+			MusicBeatState.switchState(new MultiplayerState());
+			return;
+		}
 		// Should kill you if you tried to cheat
 		if (!startingSong)
 		{
@@ -3910,6 +3924,8 @@ class PlayState extends MusicBeatState
 		if (ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled)
 		{
 			songScore += score;
+			if (MpMatch.active && note != null && note.mustPress && !note.isSustainNote)
+				MpMatch.reportNote(note.strumTime, note.noteData, daRating.ratingMod, noteDiff);
 			if (!note.ratingDisabled)
 			{
 				songHits++;
@@ -4395,6 +4411,12 @@ class PlayState extends MusicBeatState
 
 	public function noteMiss(daNote:Note, ?index:Int = -1):Void
 	{ // You didn't hit the key and let it go offscreen, also used by Hurt Notes
+		if (MpMatch.active && daNote != null && daNote.mustPress && !daNote.isSustainNote)
+		{
+			MpMatch.reportMiss(daNote.strumTime, daNote.noteData);
+			if (MpMatch.dieOnMiss)
+				health = 0;
+		}
 		// Dupe note remove
 		if (notes.length > 0)
 		{
