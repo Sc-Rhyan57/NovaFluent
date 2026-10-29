@@ -3459,7 +3459,7 @@ class PlayState extends MusicBeatState
 
 	public var transitioning = false;
 
-	public function endSong()
+    	public function endSong()
 	{
 		if (mobileControls != null)
 			mobileControls.visible = false;
@@ -3469,7 +3469,6 @@ class PlayState extends MusicBeatState
 			MusicBeatState.switchState(new MultiplayerState());
 			return;
 		}
-		// Should kill you if you tried to cheat
 		if (!startingSong)
 		{
 			notes.forEach(function(daNote:Note)
@@ -3488,9 +3487,7 @@ class PlayState extends MusicBeatState
 			}
 
 			if (doDeathCheck())
-			{
-				return false;
-			}
+				return;
 		}
 
 		keyboardViewer.save();
@@ -3531,7 +3528,7 @@ class PlayState extends MusicBeatState
 					],
 					[
 						songSpeed, playbackRate, healthGain, healthLoss,
-						cpuControlled, practiceMode, instakillOnMiss, ClientPrefs.data.playOpponent, 
+						cpuControlled, practiceMode, instakillOnMiss, ClientPrefs.data.playOpponent,
 						ClientPrefs.data.flipChart,
 					],
 					[
@@ -3542,7 +3539,7 @@ class PlayState extends MusicBeatState
 					]
 				];
 				Highscore.saveGameData(SONG.song, storyDifficulty, details, null);
-				
+
 				var record:games.backend.Replay.StateRecord = {
 					songName: songName,
 					difficulty: Difficulty.getString().toUpperCase(),
@@ -3576,9 +3573,8 @@ class PlayState extends MusicBeatState
 					ratingOffset: ClientPrefs.data.ratingOffset,
 					noteOffset: ClientPrefs.data.noteOffset,
 					botPlay: ClientPrefs.getGameplaySetting('botplay', 'bool'),
-						gameplaySettingsJson: haxe.Json.stringify(ClientPrefs.data.gameplaySettings)
+					gameplaySettingsJson: haxe.Json.stringify(ClientPrefs.data.gameplaySettings)
 				};
-				//replayExam.savePlayRecord(record);
 			}
 			#end
 			playbackRate = 1;
@@ -3586,7 +3582,7 @@ class PlayState extends MusicBeatState
 			if (chartingMode)
 			{
 				openChartEditor();
-				return false;
+				return;
 			}
 
 			if (isStoryMode)
@@ -3616,7 +3612,7 @@ class PlayState extends MusicBeatState
 					}
 					changedDifficulty = false;
 					transitioning = true;
-					return true;
+					return;
 				}
 				else
 				{
@@ -3634,33 +3630,31 @@ class PlayState extends MusicBeatState
 					LoadingState.prepareToSong();
 					LoadingState.loadAndSwitchState(new PlayState());
 					transitioning = true;
-					return true;
-					}
+					return;
+				}
 			}
 
-		// Continue to the results/freeplay flow only when onEndSong allows the song to end.
-		if (!transitioning)
-		{
-			ResultsScreen.savedModDir = Mods.currentModDirectory;
-			#if DISCORD_ALLOWED DiscordClient.resetClientID(); #end
+			if (!transitioning)
+			{
+				ResultsScreen.savedModDir = Mods.currentModDirectory;
+				#if DISCORD_ALLOWED DiscordClient.resetClientID(); #end
 
-			if (ClientPrefs.data.resultsScreen)
-			{
-				openSubState(new ResultsScreen(boyfriend.getScreenPosition().x, boyfriend.getScreenPosition().y));
-				FlxG.sound.playMusic(Paths.music('freakyMenu'), 0.7);
+				if (ClientPrefs.data.resultsScreen)
+				{
+					openSubState(new ResultsScreen(boyfriend.getScreenPosition().x, boyfriend.getScreenPosition().y));
+					FlxG.sound.playMusic(Paths.music('freakyMenu'), 0.7);
+				}
+				else
+				{
+					Mods.loadTopMod();
+					MusicBeatState.switchState(new FreeplayState());
+					FlxG.sound.playMusic(Paths.music('freakyMenu'), 0);
+					FlxG.sound.music.fadeIn(4, 0, 0.7);
+				}
+				changedDifficulty = false;
+				transitioning = true;
 			}
-			else
-			{
-				Mods.loadTopMod();
-				MusicBeatState.switchState(new FreeplayState());
-				FlxG.sound.playMusic(Paths.music('freakyMenu'), 0);
-				FlxG.sound.music.fadeIn(4, 0, 0.7);
-			}
-			changedDifficulty = false;
-			transitioning = true;
 		}
-		}
-		return true;
 	}
 
 	public function KillNotes()
