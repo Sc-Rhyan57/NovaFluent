@@ -6,8 +6,8 @@ import sys.thread.Thread;
 
 class MpApi
 {
-	public static final BASE:String = 'https://novaflare-mp.SEU-SUBDOMINIO.workers.dev';
-	public static final WS_URL:String = 'wss://novaflare-mp.SEU-SUBDOMINIO.workers.dev/ws';
+	public static final BASE:String = 'https://nfserver.msdoors-gg.workers.dev/api/v1/multiplayer';
+	public static final WS_URL:String = 'wss://nfserver.msdoors-gg.workers.dev/api/v1/multiplayer/socket';
 
 	public static var token:String = null;
 	public static var username:String = null;
@@ -34,11 +34,11 @@ class MpApi
 
 			if (error != null)
 			{
-				onDone(0, {ok: false, error: 'Sem conexão com o servidor.'});
+				onDone(0, {success: false, message: 'Sem conexão com o servidor.'});
 				return;
 			}
 
-			var json:Dynamic = {ok: false, error: 'Resposta inválida do servidor.'};
+			var json:Dynamic = {success: false, message: 'Resposta inválida do servidor.'};
 			if (raw != '')
 			{
 				try
@@ -55,9 +55,9 @@ class MpApi
 
 	public static function register(user:String, pass:String, onDone:Int->Dynamic->Void):Void
 	{
-		call('POST', '/api/register', {username: user, password: pass}, function(s:Int, j:Dynamic)
+		call('POST', '/account/register', {username: user, password: pass}, function(s:Int, j:Dynamic)
 		{
-			if (s == 201 && j.ok == true)
+			if (s == 201 && j.success == true)
 				setSession(user, j.token);
 			onDone(s, j);
 		});
@@ -65,9 +65,9 @@ class MpApi
 
 	public static function login(user:String, pass:String, onDone:Int->Dynamic->Void):Void
 	{
-		call('POST', '/api/login', {username: user, password: pass}, function(s:Int, j:Dynamic)
+		call('POST', '/account/login', {username: user, password: pass}, function(s:Int, j:Dynamic)
 		{
-			if (s == 200 && j.ok == true)
+			if (s == 200 && j.success == true)
 				setSession(user, j.token);
 			onDone(s, j);
 		});
@@ -75,7 +75,7 @@ class MpApi
 
 	public static function logout(onDone:Int->Dynamic->Void):Void
 	{
-		call('POST', '/api/logout', {}, function(s:Int, j:Dynamic)
+		call('POST', '/account/logout', {}, function(s:Int, j:Dynamic)
 		{
 			clearSession();
 			onDone(s, j);
@@ -84,12 +84,12 @@ class MpApi
 
 	public static function listServers(onDone:Int->Dynamic->Void):Void
 	{
-		call('GET', '/api/servers', null, onDone);
+		call('GET', '/rooms', null, onDone);
 	}
 
 	public static function createServer(payload:Dynamic, onDone:Int->Dynamic->Void):Void
 	{
-		call('POST', '/api/servers', payload, onDone);
+		call('POST', '/rooms', payload, onDone);
 	}
 
 	static function setSession(user:String, tok:String):Void
