@@ -376,9 +376,9 @@ class PlayState extends MusicBeatState
 		// bypasses LoadingState intentionally so the same decoded audio, frames,
 		// and animations can be reused instead of rebuilt synchronously.
 		GCManager.enable(false);
-		
-		startCallback = startCountdown;
-		endCallback = endSong;
+
+		startCallback = () -> { startCountdown(); };
+		endCallback = () -> { endSong(); };
 		
 		// for lua
 		instance = this;
