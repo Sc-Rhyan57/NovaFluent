@@ -7,16 +7,16 @@ on:
         required: false
         type: string
         default: ''
-      
+
   workflow_dispatch:
     inputs:
       dependencies_to_update:
         description: '输入 "all" 更新所有haxelib, 也可以输入单个或多个haxelib单独更新他们(e.g. "lime openfl flixel"),不输入即不给haxelib做任何更新'
         required: false
         default: ''
-        
+
       build_android:
-        description: 'Gerar build Android (APK + Haxelib)'
+        description: 'Gerar build Android (APK)'
         required: false
         type: boolean
         default: true
@@ -29,7 +29,7 @@ on:
 permissions:
   contents: write
 
-jobs: 
+jobs:
   Android:
     runs-on: macos-14
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
@@ -45,7 +45,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@main
-        
+
       - name: Setup Android NDK
         uses: nttld/setup-ndk@main
         id: setup-ndk
@@ -67,7 +67,7 @@ jobs:
         if: github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         shell: pwsh
         run: ./tools/check-gameanalytics-env.ps1 -Required
-              
+
       - name: Determine Android cache strategy
         id: android_cache
         run: |
@@ -98,19 +98,16 @@ jobs:
             .haxelib/
             export/release/android/
             ~/.gradle
-            
+
       - name: Install Android Libraries
         run: |
           haxelib setup ~/haxelib
           haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
           haxelib --global run hmm install
-          # A cached haxelib git checkout can drift to the upstream default
-          # branch even when hmm.json pins a commit. Restore every immutable
-          # dependency plus NovaFlare's compatibility fork before compilation.
           for library in polymod thx.core thx.semver FlxPartialSound; do
             haxelib --global run hmm reinstall --force "$library"
           done
-          
+
           if [ "${{ steps.android_cache.outputs.update_libs }}" == "true" ]; then
             if [ "${{ steps.android_cache.outputs.skip_cache }}" == "true" ]; then
               echo "强制重新安装所有Android依赖..."
@@ -129,7 +126,7 @@ jobs:
           haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_HOME
           haxelib run lime config JAVA_HOME $JAVA_HOME
           haxelib run lime config ANDROID_SETUP true
-            
+
       - name: Extract current version
         id: get_version
         run: |
@@ -140,22 +137,13 @@ jobs:
         run: |
           COMMIT_SHA=$(git rev-parse --short HEAD)
           CURRENT_VERSION="${{ steps.get_version.outputs.current_version }}"
-    
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             NEW_VERSION="${CURRENT_VERSION/-dev/-$COMMIT_SHA}"
             haxelib run lime build android -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$NEW_VERSION
           else
             haxelib run lime build android -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$CURRENT_VERSION
           fi
-
-      - name: Create Android zip package
-        run: |
-          cd export/release/android/bin/app/build/outputs/apk/release/
-          zip -r android.zip *.apk
-
-      - name: Create Haxelib zip package
-        run: |
-          zip -r /Users/runner/haxelib.zip .haxelib/
 
       - name: Create Android Release
         if: github.event_name != 'pull_request'
@@ -164,8 +152,7 @@ jobs:
         run: |
           TAG="android-${{ github.run_number }}-$(git rev-parse --short HEAD)"
           gh release create "$TAG" \
-            export/release/android/bin/app/build/outputs/apk/release/android.zip \
-            /Users/runner/haxelib.zip \
+            export/release/android/bin/app/build/outputs/apk/release/*.apk \
             --target "$GITHUB_SHA" \
             --title "Android $TAG" \
             --notes "Build Android do NovaFlare Engine"
@@ -190,7 +177,7 @@ jobs:
                 console.log("Cache cleared.")
               }
             }
-          
+
       - name: Save Android cache
         if: steps.android_cache.outputs.skip_cache == 'false'
         uses: actions/cache/save@v4
@@ -200,7 +187,7 @@ jobs:
             .haxelib/
             export/release/android/
             ~/.gradle
-          
+
   iOS:
     runs-on: macos-15
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
@@ -216,12 +203,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@main
-        
+
       - name: Select Xcode 16.4
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '16.4'
-  
+
       - name: Setup Haxe
         uses: krdlab/setup-haxe@master
         with:
@@ -231,7 +218,7 @@ jobs:
         if: github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         shell: pwsh
         run: ./tools/check-gameanalytics-env.ps1 -Required
-   
+
       - name: Determine iOS cache strategy
         id: ios_cache
         run: |
@@ -250,7 +237,7 @@ jobs:
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
-                
+
       - name: Restore iOS cache
         if: steps.ios_cache.outputs.skip_cache == 'false'
         uses: actions/cache/restore@v4
@@ -262,17 +249,16 @@ jobs:
           path: |
             .haxelib/
             export/release/ios/
-          
+
       - name: Install iOS Libraries
         run: |
           haxelib setup ~/haxelib
           haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
           haxelib --global run hmm install
-          # Restore pinned commits after haxelib has touched cached git clones.
           for library in polymod thx.core thx.semver FlxPartialSound; do
             haxelib --global run hmm reinstall --force "$library"
           done
-          
+
           if [ "${{ steps.ios_cache.outputs.update_libs }}" == "true" ]; then
             if [ "${{ steps.ios_cache.outputs.skip_cache }}" == "true" ]; then
               echo "强制重新安装所有iOS依赖..."
@@ -290,7 +276,7 @@ jobs:
 
       - name: Compile iOS
         run: haxelib run lime build ios -arm64 -nosign -Dcommit_sha=$(git rev-parse --short HEAD)
-        
+
       - name: Make IPA And iOS Zip
         run: |
           cd export/release/ios/build/Release-iphoneos
@@ -336,16 +322,12 @@ jobs:
                 console.log("Cache cleared.")
               }
             }
-          
+
       - name: Save iOS cache
-        if: steps.iOS_cache.outputs.skip_cache == 'false'
+        if: steps.ios_cache.outputs.skip_cache == 'false'
         uses: actions/cache/save@v4
         with:
           key: cache-build-iOS
           path: |
             .haxelib/
             export/release/ios/
-
-
-
-
