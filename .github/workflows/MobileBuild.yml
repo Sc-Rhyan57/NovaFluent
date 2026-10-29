@@ -8,15 +8,6 @@ on:
         type: string
         default: ''
       
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - 'docs/'
-      - 'example_mods/'
-      - 'README.md'
-  pull_request:
-    branches: [ main ]
-    
   workflow_dispatch:
     inputs:
       dependencies_to_update:
@@ -24,12 +15,24 @@ on:
         required: false
         default: ''
         
+      build_android:
+        description: 'Gerar build Android (APK + Haxelib)'
+        required: false
+        type: boolean
+        default: true
+      build_ios:
+        description: 'Gerar build iOS (IPA)'
+        required: false
+        type: boolean
+        default: true
+
 permissions:
   contents: write
 
 jobs: 
   Android:
     runs-on: macos-14
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
     environment: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'private-build' || 'public-build' }}
     concurrency:
       group: ${{ github.workflow }}-Android-${{ github.ref }}
@@ -200,6 +203,7 @@ jobs:
           
   iOS:
     runs-on: macos-15
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
     environment: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'private-build' || 'public-build' }}
     concurrency:
       group: ${{ github.workflow }}-iOS-${{ github.ref }}
@@ -341,3 +345,7 @@ jobs:
           path: |
             .haxelib/
             export/release/ios/
+
+
+
+
