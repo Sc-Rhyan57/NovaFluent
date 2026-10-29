@@ -24,6 +24,9 @@ on:
         required: false
         default: ''
         
+permissions:
+  contents: write
+
 jobs: 
   Android:
     runs-on: macos-14
@@ -151,19 +154,18 @@ jobs:
         run: |
           zip -r /Users/runner/haxelib.zip .haxelib/
 
-      - name: Upload Android Artifact
-        uses: actions/upload-artifact@main
-        with:
-          name: androidBuild
-          path: export/release/android/bin/app/build/outputs/apk/release/android.zip
-          if-no-files-found: error
-
-      - name: Upload Haxelib Artifact
-        uses: actions/upload-artifact@main
-        with:
-          name: Haxelib
-          path: /Users/runner/haxelib.zip
-          if-no-files-found: error
+      - name: Create Android Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="android-${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          gh release create "$TAG" \
+            export/release/android/bin/app/build/outputs/apk/release/android.zip \
+            /Users/runner/haxelib.zip \
+            --target "$GITHUB_SHA" \
+            --title "Android $TAG" \
+            --notes "Build Android do NovaFlare Engine"
 
       - name: Clear old Android cache
         if: steps.android_cache.outputs.skip_cache == 'false'
@@ -298,12 +300,17 @@ jobs:
           cd export/release/ios/build/Release-iphoneos/
           zip -r ios.zip *.ipa
 
-      - name: Upload iOS Artifact
-        uses: actions/upload-artifact@main
-        with:
-          name: iOSBuild
-          path: export/release/ios/build/Release-iphoneos/ios.zip
-          if-no-files-found: error
+      - name: Create iOS Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="ios-${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          gh release create "$TAG" \
+            export/release/ios/build/Release-iphoneos/ios.zip \
+            --target "$GITHUB_SHA" \
+            --title "iOS $TAG" \
+            --notes "Build iOS do NovaFlare Engine"
 
       - name: Clear old iOS cache
         if: steps.ios_cache.outputs.skip_cache == 'false'
