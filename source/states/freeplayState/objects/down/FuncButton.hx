@@ -18,7 +18,7 @@ class FuncButton extends FlxSpriteGroup {
     var normalColor:FlxColor = 0x312f3b;
     var hoverColor:FlxColor;
     
-    public function new(x:Float, y:Float, name:String, color:FlxColor = 0xffffff) {
+    public function new(x:Float, y:Float, name:String, color:FlxColor = 0xffffff, ?label:String, ?iconName:String) {
         super(x, y);
 
         rect = new SkewRoundRect(0, 0, 140, 80, 20, 20, -10, 0, normalColor);
@@ -38,7 +38,7 @@ class FuncButton extends FlxSpriteGroup {
         downRect.x += rect.width / 2 - downRect.width / 2 - 5;
         add(downRect);
 
-        icon = new FlxSprite().loadGraphic(Paths.image(FreeplayState.filePath + filePath + name));
+        icon = new FlxSprite().loadGraphic(Paths.image(FreeplayState.filePath + filePath + (iconName ?? name)));
         icon.antialiasing = ClientPrefs.data.antialiasing;
         icon.color = color;
         icon.setGraphicSize(25);
@@ -47,7 +47,7 @@ class FuncButton extends FlxSpriteGroup {
         icon.y += rect.height / 4 - icon.height / 2 - 2;
         add(icon);
 
-        text = new FlxText(0, 0, 0, name, Std.int(rect.height * 0.25));
+        text = new FlxText(0, 0, 0, label ?? name, Std.int(rect.height * 0.25));
 		text.setFormat(Paths.font(Language.get('fontName', 'main') + '.ttf'), Std.int(rect.height * 0.25), 0xFFFFFFFF, CENTER, FlxTextBorderStyle.OUTLINE, 0xFFFFFFFF);
         text.borderStyle = NONE;
 		text.antialiasing = ClientPrefs.data.antialiasing;
