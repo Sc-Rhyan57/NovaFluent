@@ -73,31 +73,39 @@ jobs:
         run: |
           if [[ "${{ inputs.dependencies_to_update }}" == "all" ]] || \
              [[ "${{ inputs.dependencies_to_update }}" == "android" ]]; then
-            echo "跳过缓存：需要更新所有或Android依赖"
             echo "skip_cache=true" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
           elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "ios" ]]; then
-            echo "使用缓存：仅更新指定依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
             echo "libs_to_update=${{ inputs.dependencies_to_update }}" >> $GITHUB_OUTPUT
           else
-            echo "使用缓存：无需更新依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore Android cache
+      - name: Restore Android libs from R2
         if: steps.android_cache.outputs.skip_cache == 'false'
-        uses: actions/cache/restore@v4
-        with:
-          key: cache-build-Android
-          restore-keys: |
-            cache-build-Android
-          path: |
-            .haxelib/
-            export/release/android/
-            ~/.gradle
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          if ! aws s3api head-object --bucket "$R2_BUCKET" --key android-libs.tar.gz --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
+            echo "Nenhum cache no R2, seguindo sem ele."
+            exit 0
+          fi
+
+          if aws s3 cp "s3://$R2_BUCKET/android-libs.tar.gz" /tmp/android-libs.tar.gz --endpoint-url "$R2_ENDPOINT" \
+             && tar -xzf /tmp/android-libs.tar.gz; then
+            echo "Cache restaurado do R2."
+          else
+            echo "Falha ao restaurar o cache, seguindo sem ele."
+            rm -rf .haxelib
+          fi
 
       - name: Install Android Libraries
         run: |
@@ -116,8 +124,6 @@ jobs:
               haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies
               haxelib --global run hmm reinstall --force $(echo "${{ steps.android_cache.outputs.libs_to_update }}")
             fi
-          else
-            echo "使用缓存，无需安装依赖"
           fi
 
       - name: Configure Android
@@ -157,36 +163,24 @@ jobs:
             --title "Android $TAG" \
             --notes "Build Android do NovaFlare Engine"
 
-      - name: Clear old Android cache
+      - name: Save Android libs to R2
         if: steps.android_cache.outputs.skip_cache == 'false'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const caches = await github.rest.actions.getActionsCacheList({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            })
-            for (const cache of caches.data.actions_caches) {
-              if (cache.key == "cache-build-Android") {
-                console.log('Clearing ' + cache.key + '...')
-                await github.rest.actions.deleteActionsCacheById({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  cache_id: cache.id,
-                })
-                console.log("Cache cleared.")
-              }
-            }
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          if [ ! -d .haxelib ]; then
+            echo "Sem .haxelib para salvar, pulando."
+            exit 0
+          fi
 
-      - name: Save Android cache
-        if: steps.android_cache.outputs.skip_cache == 'false'
-        uses: actions/cache/save@v4
-        with:
-          key: cache-build-Android
-          path: |
-            .haxelib/
-            export/release/android/
-            ~/.gradle
+          tar -czf /tmp/android-libs.tar.gz .haxelib
+          aws s3 cp /tmp/android-libs.tar.gz "s3://$R2_BUCKET/android-libs.tar.gz" --endpoint-url "$R2_ENDPOINT" \
+            || echo "Falha ao salvar o cache, o build não é afetado."
 
   iOS:
     runs-on: macos-15
@@ -224,31 +218,39 @@ jobs:
         run: |
           if [[ "${{ inputs.dependencies_to_update }}" == "all" ]] || \
              [[ "${{ inputs.dependencies_to_update }}" == "ios" ]]; then
-            echo "跳过缓存：需要更新所有或iOS依赖"
             echo "skip_cache=true" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
           elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "android" ]]; then
-            echo "使用缓存：仅更新指定依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
             echo "libs_to_update=${{ inputs.dependencies_to_update }}" >> $GITHUB_OUTPUT
           else
-            echo "使用缓存：无需更新依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore iOS cache
+      - name: Restore iOS libs from R2
         if: steps.ios_cache.outputs.skip_cache == 'false'
-        uses: actions/cache/restore@v4
-        with:
-          enableCrossOsArchive: true
-          key: cache-build-iOS
-          restore-keys: |
-            cache-build-iOS
-          path: |
-            .haxelib/
-            export/release/ios/
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          if ! aws s3api head-object --bucket "$R2_BUCKET" --key ios-libs.tar.gz --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
+            echo "Nenhum cache no R2, seguindo sem ele."
+            exit 0
+          fi
+
+          if aws s3 cp "s3://$R2_BUCKET/ios-libs.tar.gz" /tmp/ios-libs.tar.gz --endpoint-url "$R2_ENDPOINT" \
+             && tar -xzf /tmp/ios-libs.tar.gz; then
+            echo "Cache restaurado do R2."
+          else
+            echo "Falha ao restaurar o cache, seguindo sem ele."
+            rm -rf .haxelib
+          fi
 
       - name: Install iOS Libraries
         run: |
@@ -267,8 +269,6 @@ jobs:
               haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies
               haxelib --global run hmm reinstall --force $(echo "${{ steps.ios_cache.outputs.libs_to_update }}")
             fi
-          else
-            echo "使用缓存，无需安装依赖"
           fi
 
           echo "lime revision: $(git -C .haxelib/lime/git rev-parse HEAD)"
@@ -302,32 +302,21 @@ jobs:
             --title "iOS $TAG" \
             --notes "Build iOS do NovaFlare Engine"
 
-      - name: Clear old iOS cache
+      - name: Save iOS libs to R2
         if: steps.ios_cache.outputs.skip_cache == 'false'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const caches = await github.rest.actions.getActionsCacheList({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            })
-            for (const cache of caches.data.actions_caches) {
-              if (cache.key == "cache-build-iOS") {
-                console.log('Clearing ' + cache.key + '...')
-                await github.rest.actions.deleteActionsCacheById({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  cache_id: cache.id,
-                })
-                console.log("Cache cleared.")
-              }
-            }
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          if [ ! -d .haxelib ]; then
+            echo "Sem .haxelib para salvar, pulando."
+            exit 0
+          fi
 
-      - name: Save iOS cache
-        if: steps.ios_cache.outputs.skip_cache == 'false'
-        uses: actions/cache/save@v4
-        with:
-          key: cache-build-iOS
-          path: |
-            .haxelib/
-            export/release/ios/
+          tar -czf /tmp/ios-libs.tar.gz .haxelib
+          aws s3 cp /tmp/ios-libs.tar.gz "s3://$R2_BUCKET/ios-libs.tar.gz" --endpoint-url "$R2_ENDPOINT" \
+            || echo "Falha ao salvar o cache, o build não é afetado."
