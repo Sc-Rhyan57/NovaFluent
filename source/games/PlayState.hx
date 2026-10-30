@@ -456,6 +456,7 @@ class PlayState extends MusicBeatState
 		// String that contains the mode defined here so it isn't necessary to call changePresence for each mode
 		storyDifficultyText = Difficulty.getString();
 
+		autoUpdateRPC = !MpMatch.active;
 		if (MpMatch.active && MpMatch.room != null)
 			detailsText = "Multiplayer: " + MpMatch.room.name;
 		else if (isStoryMode)

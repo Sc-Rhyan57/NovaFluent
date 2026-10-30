@@ -7,29 +7,30 @@ import sys.thread.Deque;
 
 class MpSocket
 {
-	// Intervalo do ping de keepalive (segundos). O servidor responde com pong.
 	static final PING_EVERY:Float = 20;
+	static final TIMEOUT_AFTER:Float = 45;
 
-	// Socket atual. Só existe um por vez; o hook de frame usa essa referência.
 	public static var current:MpSocket = null;
 	static var hooked:Bool = false;
 
 	public var inbox:Deque<Dynamic> = new Deque();
 	public var open:Bool = false;
+	public var rtt:Float = -1;
 
 	var ws:Dynamic;
 	var outbox:Array<String> = [];
 	var closedSent:Bool = false;
 	var lastPing:Float = 0;
+	var lastSeen:Float = 0;
 
 	public function new(url:String)
 	{
 		current = this;
 		lastPing = Timer.stamp();
+		lastSeen = lastPing;
 		if (!hooked)
 		{
 			hooked = true;
-			// Lê o socket e mantém o ping em qualquer tela (menu, pausa, loading, partida).
 			FlxG.signals.postUpdate.add(frame);
 		}
 
@@ -38,6 +39,7 @@ class MpSocket
 		ws.onopen = function()
 		{
 			open = true;
+			lastSeen = Timer.stamp();
 			var pending:Array<String> = outbox;
 			outbox = [];
 			for (text in pending)
@@ -54,9 +56,13 @@ class MpSocket
 				text = Std.string(Type.enumParameters(m)[0]);
 			if (text == null)
 				return;
+			lastSeen = Timer.stamp();
 			try
 			{
-				inbox.add(Json.parse(text));
+				var msg:Dynamic = Json.parse(text);
+				if (msg != null && msg.type == 'pong')
+					measure(msg);
+				inbox.add(msg);
 			}
 			catch (e:Dynamic)
 			{
@@ -105,6 +111,14 @@ class MpSocket
 		}
 	}
 
+	function measure(msg:Dynamic):Void
+	{
+		if (msg.t == null)
+			return;
+		var sent:Float = msg.t;
+		rtt = Timer.stamp() * 1000 - sent;
+	}
+
 	static function frame():Void
 	{
 		var s:MpSocket = current;
@@ -116,13 +130,29 @@ class MpSocket
 
 	function heartbeat():Void
 	{
-		if (!open)
+		if (ws == null)
 			return;
 		var now:Float = Timer.stamp();
+		if (now - lastSeen > TIMEOUT_AFTER)
+		{
+			dropDead();
+			return;
+		}
+		if (!open)
+			return;
 		if (now - lastPing < PING_EVERY)
 			return;
 		lastPing = now;
-		rawSend('{"type":"ping"}');
+		rawSend(Json.stringify({type: 'ping', t: now * 1000}));
+	}
+
+	function dropDead():Void
+	{
+		if (closedSent)
+			return;
+		inbox.add({type: '_error', message: 'timeout'});
+		inbox.add({type: '_close'});
+		close();
 	}
 
 	public function pump():Void

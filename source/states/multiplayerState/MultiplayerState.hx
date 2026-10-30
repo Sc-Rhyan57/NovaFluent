@@ -17,7 +17,6 @@ import general.backend.MpButton;
 import general.backend.MpMatch;
 import general.backend.MpMatch.PendingSong;
 import general.backend.MpModTransfer;
-import general.backend.MpPresence;
 import general.backend.MpScripts;
 import general.backend.MpSocket;
 import general.backend.MusicBeatState;
@@ -136,7 +135,6 @@ class MultiplayerState extends MusicBeatState
 	override function create():Void
 	{
 		super.create();
-		MpPresence.reset();
 
 		add(new FlxSprite().makeGraphic(FlxG.width, FlxG.height, C_BG));
 
@@ -218,7 +216,6 @@ class MultiplayerState extends MusicBeatState
 	function showMode(m:String):Void
 	{
 		mode = m;
-		updatePresence();
 		for (k in groups.keys())
 		{
 			var show:Bool = k == m;
@@ -806,25 +803,6 @@ class MultiplayerState extends MusicBeatState
 		return parts.join('  |  ');
 	}
 
-	function updatePresence():Void
-	{
-		switch (mode)
-		{
-			case 'room':
-				if (room != null)
-				{
-					var n:Int = room.members != null ? room.members.length : 0;
-					MpPresence.set('Servidor: ' + room.name, (isHost ? 'Host' : 'Jogador') + ' · ' + n + (n == 1 ? ' jogador' : ' jogadores'));
-				}
-			case 'create':
-				MpPresence.set('Multiplayer', 'Criando servidor');
-			case 'auth':
-				MpPresence.set('Multiplayer', 'Fazendo login');
-			default:
-				MpPresence.set('Multiplayer', 'No lobby');
-		}
-	}
-
 	function refreshRoomUI():Void
 	{
 		if (room == null)
@@ -965,7 +943,6 @@ class MultiplayerState extends MusicBeatState
 				if (isHost)
 					syncSongIndex();
 				refreshRoomUI();
-				updatePresence();
 
 			case 'chart':
 				MpMatch.storeChart(cast m.entries);
