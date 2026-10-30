@@ -16,6 +16,8 @@
 <br />
 
 # Announcement
+> [!WARNING]
+> Not a oficial NovaFlareEngine! Just an private online version.
 
 > [!WARNING]
 > The NovaFlare-1.2.2 version was withdrawn at 13:20:21 Beijing time on September 30, 2026.
