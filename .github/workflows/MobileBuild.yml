@@ -84,27 +84,17 @@ jobs:
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore Android libs from R2
+      - name: Restore Android libs from release
         if: steps.android_cache.outputs.skip_cache == 'false'
         continue-on-error: true
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! aws s3api head-object --bucket "$R2_BUCKET" --key android-libs.tar.gz --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
-            echo "Nenhum cache no R2, seguindo sem ele."
-            exit 0
-          fi
-
-          if aws s3 cp "s3://$R2_BUCKET/android-libs.tar.gz" /tmp/android-libs.tar.gz --endpoint-url "$R2_ENDPOINT" \
-             && tar -xzf /tmp/android-libs.tar.gz; then
-            echo "Cache restaurado do R2."
+          if gh release download libs-cache -p android-libs.zip -D /tmp --clobber 2>/dev/null; then
+            unzip -q /tmp/android-libs.zip || rm -rf .haxelib
+            [ -d .haxelib ] && echo "Libs restauradas da release." || echo "Falha ao descompactar, seguindo sem cache."
           else
-            echo "Falha ao restaurar o cache, seguindo sem ele."
-            rm -rf .haxelib
+            echo "Nenhum cache na release, seguindo sem ele."
           fi
 
       - name: Install Android Libraries
@@ -163,24 +153,18 @@ jobs:
             --title "Android $TAG" \
             --notes "Build Android do NovaFlare Engine"
 
-      - name: Save Android libs to R2
+      - name: Save Android libs to release
         if: steps.android_cache.outputs.skip_cache == 'false'
         continue-on-error: true
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ ! -d .haxelib ]; then
-            echo "Sem .haxelib para salvar, pulando."
-            exit 0
-          fi
-
-          tar -czf /tmp/android-libs.tar.gz .haxelib
-          aws s3 cp /tmp/android-libs.tar.gz "s3://$R2_BUCKET/android-libs.tar.gz" --endpoint-url "$R2_ENDPOINT" \
-            || echo "Falha ao salvar o cache, o build não é afetado."
+          [ -d .haxelib ] || { echo "Sem .haxelib para salvar, pulando."; exit 0; }
+          zip -qr /tmp/android-libs.zip .haxelib
+          gh release view libs-cache >/dev/null 2>&1 || \
+            gh release create libs-cache --target "$GITHUB_SHA" --prerelease \
+              --title "Libs cache" --notes "Cache automático de haxelibs. Não apague."
+          gh release upload libs-cache /tmp/android-libs.zip --clobber
 
   iOS:
     runs-on: macos-15
@@ -229,27 +213,17 @@ jobs:
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore iOS libs from R2
+      - name: Restore iOS libs from release
         if: steps.ios_cache.outputs.skip_cache == 'false'
         continue-on-error: true
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! aws s3api head-object --bucket "$R2_BUCKET" --key ios-libs.tar.gz --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
-            echo "Nenhum cache no R2, seguindo sem ele."
-            exit 0
-          fi
-
-          if aws s3 cp "s3://$R2_BUCKET/ios-libs.tar.gz" /tmp/ios-libs.tar.gz --endpoint-url "$R2_ENDPOINT" \
-             && tar -xzf /tmp/ios-libs.tar.gz; then
-            echo "Cache restaurado do R2."
+          if gh release download libs-cache -p ios-libs.zip -D /tmp --clobber 2>/dev/null; then
+            unzip -q /tmp/ios-libs.zip || rm -rf .haxelib
+            [ -d .haxelib ] && echo "Libs restauradas da release." || echo "Falha ao descompactar, seguindo sem cache."
           else
-            echo "Falha ao restaurar o cache, seguindo sem ele."
-            rm -rf .haxelib
+            echo "Nenhum cache na release, seguindo sem ele."
           fi
 
       - name: Install iOS Libraries
@@ -302,21 +276,15 @@ jobs:
             --title "iOS $TAG" \
             --notes "Build iOS do NovaFlare Engine"
 
-      - name: Save iOS libs to R2
+      - name: Save iOS libs to release
         if: steps.ios_cache.outputs.skip_cache == 'false'
         continue-on-error: true
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ ! -d .haxelib ]; then
-            echo "Sem .haxelib para salvar, pulando."
-            exit 0
-          fi
-
-          tar -czf /tmp/ios-libs.tar.gz .haxelib
-          aws s3 cp /tmp/ios-libs.tar.gz "s3://$R2_BUCKET/ios-libs.tar.gz" --endpoint-url "$R2_ENDPOINT" \
-            || echo "Falha ao salvar o cache, o build não é afetado."
+          [ -d .haxelib ] || { echo "Sem .haxelib para salvar, pulando."; exit 0; }
+          zip -qr /tmp/ios-libs.zip .haxelib
+          gh release view libs-cache >/dev/null 2>&1 || \
+            gh release create libs-cache --target "$GITHUB_SHA" --prerelease \
+              --title "Libs cache" --notes "Cache automático de haxelibs. Não apague."
+          gh release upload libs-cache /tmp/ios-libs.zip --clobber
