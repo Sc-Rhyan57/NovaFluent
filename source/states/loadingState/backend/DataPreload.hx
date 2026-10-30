@@ -242,10 +242,8 @@ class DataPreload
 
 	static function preloadScript()
 	{
-		if (MpMatch.active)
-			return;
 		#if ((LUA_ALLOWED || HSCRIPT_ALLOWED) && sys)
-		for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'scripts/'))
+		for (folder in MpMatch.scriptDirs('scripts/'))
 			for (file in FileSystem.readDirectory(folder))
 			{
 				#if LUA_ALLOWED
@@ -260,7 +258,7 @@ class DataPreload
 			}
 
 		var songName = PlayState.SONG.song;
-		for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'data/$songName/'))
+		for (folder in MpMatch.scriptDirs('data/$songName/'))
 			for (file in FileSystem.readDirectory(folder))
 			{
 				#if LUA_ALLOWED
