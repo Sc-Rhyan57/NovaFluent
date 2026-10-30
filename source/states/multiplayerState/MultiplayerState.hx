@@ -135,6 +135,8 @@ class MultiplayerState extends MusicBeatState
         var pendingStart:Bool = false;
         var startAt:Float = 0;
 
+        public static var storedEvents:Array<Dynamic> = [];
+
         override function create():Void
         {
                 super.create();
@@ -1010,10 +1012,8 @@ class MultiplayerState extends MusicBeatState
 
                         case 'chart':
                                 MpMatch.storeChart(cast m.entries);
-                                // Store chart events for the non-host client so
-                                // PlayState can trigger them during gameplay.
                                 if (m.events != null)
-                                        MpMatch.storeEvents(cast m.events);
+                                        storedEvents = cast m.events;
 
                         case 'chartOk':
                                 setStatus('Música enviada: ' + m.count + ' notas. Iniciando...');
@@ -1234,7 +1234,7 @@ class MultiplayerState extends MusicBeatState
                         'songName=' + MpMatch.songName + '\n' +
                         'songDifficulty=' + MpMatch.songDifficulty + '\n' +
                         'modsRoot=' + Paths.mods('') + '\n' +
-                        'modExists=' + (modDir != '' ? FileSystem.exists(Paths.mods(modDir)) : 'N/A') + '\n' +
+                        'modExists=' + (modDir != '' ? Std.string(FileSystem.exists(Paths.mods(modDir))) : 'N/A') + '\n' +
                         'songPath=' + Paths.mods(modDir + '/songs/' + Paths.formatToSongPath(MpMatch.songName) + '/') + '\n'
                 ); } catch(e:Dynamic) {}
 
