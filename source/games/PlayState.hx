@@ -3573,7 +3573,7 @@ class PlayState extends MusicBeatState
 		{
 			MpMatch.finish();
 			MusicBeatState.switchState(new MultiplayerState());
-			return;
+			return false;
 		}
 		// Should kill you if you tried to cheat
 		if (!startingSong)
@@ -5313,7 +5313,7 @@ class PlayState extends MusicBeatState
 	public function startLuasNamed(luaFile:String)
 	{
 		if (MpMatch.active)
-			return;
+			return false;
 		#if MODS_ALLOWED
 		var luaToLoad:String = Paths.modFolders(luaFile);
 		if (!FileSystem.exists(luaToLoad))
@@ -5340,7 +5340,7 @@ class PlayState extends MusicBeatState
 	public function startHScriptsNamed(scriptFile:String)
 	{
 		if (MpMatch.active)
-			return;
+			return false;
 		#if MODS_ALLOWED
 		var scriptToLoad:String = Paths.modFolders(scriptFile);
 		if (!FileSystem.exists(scriptToLoad))
