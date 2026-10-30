@@ -92,6 +92,11 @@ class MpApi
 		call('POST', '/rooms', payload, onDone);
 	}
 
+	public static function getScripts(onDone:Int->Dynamic->Void):Void
+	{
+		call('GET', '/scripts', null, onDone);
+	}
+
 	static function setSession(user:String, tok:String):Void
 	{
 		username = user;
