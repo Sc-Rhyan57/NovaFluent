@@ -203,14 +203,15 @@ class OnlineMods
 		}
 	}
 
-	public static function install(mod:OnlineMod, onPhase:String->Void):Void
+	public static function install(mod:OnlineMod, onPhase:String->Float->Void):Void
 	{
-		var bytes:Bytes = fetchBytesProgress(mod.download, mod.size, function(p:Int) onPhase('Baixando ' + p + '%'));
+		onPhase('Baixando', 0);
+		var bytes:Bytes = fetchBytesProgress(mod.download, mod.size, function(p:Int) onPhase('Baixando', p / 100));
 
-		onPhase('Verificando');
+		onPhase('Verificando', 1);
 		verify(bytes, mod.sha256);
 
-		onPhase('Extraindo');
+		onPhase('Extraindo', 1);
 		extract(bytes, mod.folder);
 	}
 
