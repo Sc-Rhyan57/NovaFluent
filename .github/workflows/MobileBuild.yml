@@ -73,13 +73,16 @@ jobs:
         run: |
           if [[ "${{ inputs.dependencies_to_update }}" == "all" ]] || \
              [[ "${{ inputs.dependencies_to_update }}" == "android" ]]; then
+            echo "跳过缓存：需要更新所有或Android依赖"
             echo "skip_cache=true" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
           elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "ios" ]]; then
+            echo "使用缓存：仅更新指定依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
             echo "libs_to_update=${{ inputs.dependencies_to_update }}" >> $GITHUB_OUTPUT
           else
+            echo "使用缓存：无需更新依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
@@ -107,11 +110,14 @@ jobs:
 
           if [ "${{ steps.android_cache.outputs.update_libs }}" == "true" ]; then
             if [ "${{ steps.android_cache.outputs.skip_cache }}" == "true" ]; then
-              echo "force reinstall all"
+              echo "强制重新安装所有Android依赖..."
             elif [ -n "${{ steps.android_cache.outputs.libs_to_update }}" ]; then
+              echo "更新指定Android依赖: ${{ steps.android_cache.outputs.libs_to_update }}"
               haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies
               haxelib --global run hmm reinstall --force $(echo "${{ steps.android_cache.outputs.libs_to_update }}")
             fi
+          else
+            echo "使用缓存，无需安装依赖"
           fi
 
       - name: Configure Android
@@ -162,11 +168,13 @@ jobs:
             })
             for (const cache of caches.data.actions_caches) {
               if (cache.key == "cache-build-Android") {
+                console.log('Clearing ' + cache.key + '...')
                 await github.rest.actions.deleteActionsCacheById({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   cache_id: cache.id,
                 })
+                console.log("Cache cleared.")
               }
             }
 
@@ -216,13 +224,16 @@ jobs:
         run: |
           if [[ "${{ inputs.dependencies_to_update }}" == "all" ]] || \
              [[ "${{ inputs.dependencies_to_update }}" == "ios" ]]; then
+            echo "跳过缓存：需要更新所有或iOS依赖"
             echo "skip_cache=true" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
           elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "android" ]]; then
+            echo "使用缓存：仅更新指定依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
             echo "libs_to_update=${{ inputs.dependencies_to_update }}" >> $GITHUB_OUTPUT
           else
+            echo "使用缓存：无需更新依赖"
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
@@ -250,12 +261,18 @@ jobs:
 
           if [ "${{ steps.ios_cache.outputs.update_libs }}" == "true" ]; then
             if [ "${{ steps.ios_cache.outputs.skip_cache }}" == "true" ]; then
-              echo "force reinstall all"
+              echo "强制重新安装所有iOS依赖..."
             elif [ -n "${{ steps.ios_cache.outputs.libs_to_update }}" ]; then
+              echo "更新指定iOS依赖: ${{ steps.ios_cache.outputs.libs_to_update }}"
               haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies
               haxelib --global run hmm reinstall --force $(echo "${{ steps.ios_cache.outputs.libs_to_update }}")
             fi
+          else
+            echo "使用缓存，无需安装依赖"
           fi
+
+          echo "lime revision: $(git -C .haxelib/lime/git rev-parse HEAD)"
+          echo "openfl revision: $(git -C .haxelib/openfl/git rev-parse HEAD)"
 
       - name: Compile iOS
         run: haxelib run lime build ios -arm64 -nosign -Dcommit_sha=$(git rev-parse --short HEAD)
@@ -296,11 +313,13 @@ jobs:
             })
             for (const cache of caches.data.actions_caches) {
               if (cache.key == "cache-build-iOS") {
+                console.log('Clearing ' + cache.key + '...')
                 await github.rest.actions.deleteActionsCacheById({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   cache_id: cache.id,
                 })
+                console.log("Cache cleared.")
               }
             }
 
