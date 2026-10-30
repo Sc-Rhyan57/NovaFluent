@@ -15,6 +15,8 @@ import games.backend.WeekData;
 import games.backend.Highscore;
 import games.backend.Replay;
 import games.backend.Song;
+import general.backend.MpMatch;
+import states.multiplayerState.MultiplayerState;
 
 /*
 	PauseSubState made by TieGuo, code optimized by Beihu.
@@ -257,7 +259,9 @@ class PauseSubState extends MusicBeatSubstate
 			add(optionText);
 		}
 
-		if (!PlayState.chartingMode)
+		if (MpMatch.active)
+			options = ['Continues', 'Exit'];
+		else if (!PlayState.chartingMode)
 			options.remove('Debug');
 
 		for (i in 0...options.length)
@@ -637,6 +641,13 @@ class PauseSubState extends MusicBeatSubstate
 				case 'Restart':
 					restartSong();
 				case 'Exit':
+					if (MpMatch.active)
+					{
+						MpMatch.exit();
+						Mods.loadTopMod();
+						MusicBeatState.switchState(new MultiplayerState());
+						return;
+					}
 					PlayState.deathCounter = 0;
 					PlayState.seenCutscene = false;
 
