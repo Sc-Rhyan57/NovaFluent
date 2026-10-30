@@ -90,9 +90,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release download libs-cache -p android-libs.zip -D /tmp --clobber 2>/dev/null; then
-            unzip -q /tmp/android-libs.zip || rm -rf .haxelib
-            [ -d .haxelib ] && echo "Libs restauradas da release." || echo "Falha ao descompactar, seguindo sem cache."
+          rm -rf /tmp/android-parts && mkdir -p /tmp/android-parts
+          if gh release download libs-cache -p 'android-libs.tar.gz.part-*' -D /tmp/android-parts --clobber 2>/dev/null; then
+            if cat /tmp/android-parts/android-libs.tar.gz.part-* | tar -xzf -; then
+              echo "Libs restauradas da release."
+            else
+              echo "Falha ao descompactar, seguindo sem cache."
+              rm -rf .haxelib
+            fi
           else
             echo "Nenhum cache na release, seguindo sem ele."
           fi
@@ -160,11 +165,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [ -d .haxelib ] || { echo "Sem .haxelib para salvar, pulando."; exit 0; }
-          zip -qr /tmp/android-libs.zip .haxelib
+          rm -f /tmp/android-libs.tar.gz.part-*
+          tar -czf - --exclude='.git' .haxelib | split -b 1900m -d -a 2 - /tmp/android-libs.tar.gz.part-
+          echo "Partes geradas: $(ls /tmp/android-libs.tar.gz.part-* | wc -l)"
+
           gh release view libs-cache >/dev/null 2>&1 || \
             gh release create libs-cache --target "$GITHUB_SHA" --prerelease \
               --title "Libs cache" --notes "Cache automático de haxelibs. Não apague."
-          gh release upload libs-cache /tmp/android-libs.zip --clobber
+
+          gh release view libs-cache --json assets -q '.assets[].name' \
+            | grep '^android-libs.tar.gz.part-' \
+            | while read -r name; do gh release delete-asset libs-cache "$name" -y; done
+
+          gh release upload libs-cache /tmp/android-libs.tar.gz.part-*
 
   iOS:
     runs-on: macos-15
@@ -219,9 +232,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release download libs-cache -p ios-libs.zip -D /tmp --clobber 2>/dev/null; then
-            unzip -q /tmp/ios-libs.zip || rm -rf .haxelib
-            [ -d .haxelib ] && echo "Libs restauradas da release." || echo "Falha ao descompactar, seguindo sem cache."
+          rm -rf /tmp/ios-parts && mkdir -p /tmp/ios-parts
+          if gh release download libs-cache -p 'ios-libs.tar.gz.part-*' -D /tmp/ios-parts --clobber 2>/dev/null; then
+            if cat /tmp/ios-parts/ios-libs.tar.gz.part-* | tar -xzf -; then
+              echo "Libs restauradas da release."
+            else
+              echo "Falha ao descompactar, seguindo sem cache."
+              rm -rf .haxelib
+            fi
           else
             echo "Nenhum cache na release, seguindo sem ele."
           fi
@@ -283,8 +301,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [ -d .haxelib ] || { echo "Sem .haxelib para salvar, pulando."; exit 0; }
-          zip -qr /tmp/ios-libs.zip .haxelib
+          rm -f /tmp/ios-libs.tar.gz.part-*
+          tar -czf - --exclude='.git' .haxelib | split -b 1900m -d -a 2 - /tmp/ios-libs.tar.gz.part-
+          echo "Partes geradas: $(ls /tmp/ios-libs.tar.gz.part-* | wc -l)"
+
           gh release view libs-cache >/dev/null 2>&1 || \
             gh release create libs-cache --target "$GITHUB_SHA" --prerelease \
               --title "Libs cache" --notes "Cache automático de haxelibs. Não apague."
-          gh release upload libs-cache /tmp/ios-libs.zip --clobber
+
+          gh release view libs-cache --json assets -q '.assets[].name' \
+            | grep '^ios-libs.tar.gz.part-' \
+            | while read -r name; do gh release delete-asset libs-cache "$name" -y; done
+
+          gh release upload libs-cache /tmp/ios-libs.tar.gz.part-*
