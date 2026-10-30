@@ -890,8 +890,10 @@ class PlayState extends MusicBeatState
 
                 // In multiplayer we must not start the countdown until every player
                 // has finished loading PlayState.  Defer startCallback() and notify
-                // the server that we are ready.
-                if (MpMatch.active)
+                // the server that we are ready.  If the socket is already gone (e.g.
+                // the match was aborted during loading), skip the handshake and start
+                // immediately so the game doesn't hang.
+                if (MpMatch.active && MpMatch.socket != null)
                 {
                         mpWaitingForLoad = true;
                         mpAllLoaded = false;
@@ -945,8 +947,12 @@ class PlayState extends MusicBeatState
                 if (MpMatch.active && !mpSentLoaded)
                 {
                         mpSentLoaded = true;
-                        if (MpMatch.socket != null)
-                                MpMatch.socket.send({type: 'loaded'});
+                        try
+                        {
+                                if (MpMatch.socket != null)
+                                        MpMatch.socket.send({type: 'loaded'});
+                        }
+                        catch(e:Dynamic) {}
                 }
         }
 
@@ -2538,55 +2544,58 @@ class PlayState extends MusicBeatState
 
         override function update(elapsed:Float)
         {
-                // Intercept multiplayer system messages (playerLoaded, allLoaded) and
-                // cache judge messages BEFORE MpMatch.tick() consumes the inbox.
-                // MpMatch does not know about the new "loaded" handshake types, so we
-                // pull them out here and push everything else back so tick() can still
-                // process judge/paused/resumed chart messages normally.
-                if (MpMatch.socket != null)
+                // Drain only the system messages that MpMatch.tick() does NOT know
+                // about (playerLoaded, allLoaded).  We pop one at a time and push
+                // back anything we don't handle, so tick() still sees its messages
+                // in the same order.  Everything is wrapped in try/catch because an
+                // uncaught Haxe exception on CPP target calls std::terminate() which
+                // triggers SIGABRT.
+                try
                 {
-                        var deferred:Array<Dynamic> = [];
-                        var msg:Dynamic = MpMatch.socket.inbox.pop(false);
-                        while (msg != null)
+                        if (MpMatch.socket != null)
                         {
-                                var t:String = (msg != null && msg.type != null) ? Std.string(msg.type) : '';
-                                if (t == 'playerLoaded')
+                                var deferred:Array<Dynamic> = [];
+                                var msg:Dynamic = MpMatch.socket.inbox.pop(false);
+                                while (msg != null)
                                 {
-                                        var who:String = msg.username != null ? Std.string(msg.username) : '';
-                                        if (who != '')
-                                                mpLoadedPlayers.set(who, true);
+                                        var t:String = '';
+                                        try { t = msg != null && msg.type != null ? Std.string(msg.type) : ''; } catch(e:Dynamic) {}
+                                        if (t == 'playerLoaded')
+                                        {
+                                                var who:String = '';
+                                                try { who = msg.username != null ? Std.string(msg.username) : ''; } catch(e:Dynamic) {}
+                                                if (who != '')
+                                                        mpLoadedPlayers.set(who, true);
+                                        }
+                                        else if (t == 'allLoaded')
+                                        {
+                                                mpAllLoaded = true;
+                                        }
+                                        else if (t == 'judge' && MpMatch.active)
+                                        {
+                                                var nid:String = '';
+                                                try { nid = msg.noteId != null ? Std.string(msg.noteId) : ''; } catch(e:Dynamic) {}
+                                                if (nid != '' && msg.judgement != null)
+                                                        remoteJudgements.set(nid, Std.string(msg.judgement));
+                                                deferred.push(msg);
+                                        }
+                                        else
+                                        {
+                                                deferred.push(msg);
+                                        }
+                                        msg = MpMatch.socket.inbox.pop(false);
                                 }
-                                else if (t == 'allLoaded')
-                                {
-                                        mpAllLoaded = true;
-                                }
-                                else if (t == 'judge' && MpMatch.active)
-                                {
-                                        // Cache the judgement so the takeRemoteHits() loop
-                                        // below knows which animation to play.  Push it back
-                                        // so MpMatch.tick() still queues the noteId.
-                                        var nid:String = msg.noteId != null ? Std.string(msg.noteId) : '';
-                                        if (nid != '' && msg.judgement != null)
-                                                remoteJudgements.set(nid, Std.string(msg.judgement));
-                                        deferred.push(msg);
-                                }
-                                else
-                                {
-                                        deferred.push(msg);
-                                }
-                                msg = MpMatch.socket.inbox.pop(false);
+                                for (d in deferred)
+                                        MpMatch.socket.inbox.add(d);
                         }
-                        for (d in deferred)
-                                MpMatch.socket.inbox.add(d);
                 }
+                catch(e:Dynamic) {}
 
                 if (MpMatch.active || MpMatch.returning)
                         MpMatch.tick();
                 if (MpMatch.aborted)
                 {
                         var abortMsg:String = MpMatch.abortReason;
-                        // Clean up video before switching states to avoid VLC callbacks
-                        // firing into a destroyed Haxe object (native SIGABRT).
                         killVideoCutscene();
                         MpMatch.reset();
                         MpMatch.pendingStatus = abortMsg;
@@ -2596,7 +2605,7 @@ class PlayState extends MusicBeatState
                 if (mpWaitingForLoad && mpAllLoaded)
                 {
                         mpWaitingForLoad = false;
-                        startCallback();
+                        try { startCallback(); } catch(e:Dynamic) {}
                 }
                 if (MpMatch.active && playerStrums != null && opponentStrums != null)
                 {
@@ -2610,7 +2619,7 @@ class PlayState extends MusicBeatState
                                 if (remoteNote != null && !remoteNote.wasGoodHit)
                                 {
                                         var judgement:String = remoteJudgements.get(remoteId);
-                                        applyRemoteJudge(remoteNote, judgement);
+                                        try { applyRemoteJudge(remoteNote, judgement); } catch(e:Dynamic) {}
                                 }
                         }
                 }
@@ -3073,31 +3082,36 @@ class PlayState extends MusicBeatState
         {
                 if (MpMatch.active && !MpMatch.isHost)
                         return;
-                FlxG.camera.followLerp = 0;
-                persistentUpdate = false;
-                persistentDraw = true;
-                paused = true;
-                if (timing != null) timing.pause();
-                pausedTimePos = Conductor.songPosition;
-
-                keyboardViewer.save();
-
-                if (FlxG.sound.music != null)
+                try
                 {
-                        FlxG.sound.music.pause();
-                        vocals.pause();
-                        opponentVocals.pause();
+                        FlxG.camera.followLerp = 0;
+                        persistentUpdate = false;
+                        persistentDraw = true;
+                        paused = true;
+                        if (timing != null) timing.pause();
+                        pausedTimePos = Conductor.songPosition;
+
+                        keyboardViewer.save();
+
+                        if (FlxG.sound.music != null)
+                        {
+                                FlxG.sound.music.pause();
+                                vocals.pause();
+                                opponentVocals.pause();
+                        }
+                        if (videoCutscene != null)
+                        {
+                                videoCutscene.pause();
+                        };
+                        resumeGameplayGcAfterSubstate = GameplayGC.active;
+                        GameplayGC.pause();
+
+                        if (replayMode) @:privateAccess replayExam.unblockKeys();
+                        openSubState(new PauseSubState());
+                        if (MpMatch.active && MpMatch.isHost)
+                                MpMatch.sendPause();
                 }
-                if (videoCutscene != null)
-                {
-                        videoCutscene.pause();
-                };
-                resumeGameplayGcAfterSubstate = GameplayGC.active;
-                GameplayGC.pause();
-
-                if (replayMode) @:privateAccess replayExam.unblockKeys();
-                openSubState(new PauseSubState());
-                MpMatch.sendPause();
+                catch(e:Dynamic) {}
 
                 #if DISCORD_ALLOWED
                 if (autoUpdateRPC)
@@ -5071,10 +5085,28 @@ class PlayState extends MusicBeatState
         }
 
         // Replicates the opponent's note hit on this client's screen.
-        // Unlike opponentNoteHit(), this does NOT touch local score/combo — the
-        // opponent's score lives on the server and is shown via MpMatch.updateOverlay.
-        // We only drive the visual feedback: character sing animation, strum
-        // confirm, vocals volume, and note cleanup.
+        // When the opponent (remote player) hits a note, the server broadcasts a
+        // "judge" message with mustHit/gf/lane info.  This method:
+        //
+        //   - Plays the SING animation on the character that OWNS the note:
+        //       mustHit=true  -> boyfriend (the opponent's in-game character)
+        //       mustHit=false -> dad
+        //       gfNote=true   -> gf (overrides the above)
+        //
+        //   - Flashes the strum on the side that the note BELONGS to:
+        //       mustHit=true  -> playerStrums (boyfriend side)
+        //       mustHit=false -> opponentStrums (dad side)
+        //
+        //   - Does NOT touch local score/combo (that's tracked server-side).
+        //
+        // In the standard FNF multiplayer setup:
+        //   Host plays mustHitSection=true sections (boyfriend) -> their hits
+        //   animate boyfriend on their screen, and the judge broadcast makes the
+        //   opponent's screen also animate boyfriend.
+        //
+        //   Non-host plays mustHitSection=false sections (dad) -> their hits
+        //   animate dad on their screen, and the judge broadcast makes the host's
+        //   screen also animate dad.
         function applyRemoteJudge(note:Note, judgement:String):Void
         {
                 if (note == null)
@@ -5082,54 +5114,52 @@ class PlayState extends MusicBeatState
                 note.wasGoodHit = true;
                 note.visible = true;
 
+                // Determine which character to animate based on the note's section.
+                // The remote player is controlling this note, so we replicate their
+                // character's animation on our screen.
+                var isMustHitSide:Bool = note.mustPress; // true = boyfriend's side
+                var char:Character = isMustHitSide ? boyfriend : dad;
+                if (note.gfNote)
+                        char = gf;
+
                 if (judgement == 'miss')
                 {
-                        // The opponent missed: play their miss animation if the
-                        // character has one, and let the note be cleaned up by the
-                        // normal noteKillOffset path.
-                        if (!note.noAnimation && dad != null)
+                        if (!note.noAnimation && char != null)
                         {
                                 var missAnim:String = singAnimations[Std.int(Math.abs(Math.min(singAnimations.length - 1, note.noteData)))] + 'miss';
-                                if (dad.animOffsets != null && dad.animOffsets.exists(missAnim))
+                                if (char.animOffsets != null && char.animOffsets.exists(missAnim))
                                 {
-                                        dad.playAnim(missAnim, true);
-                                        dad.holdTimer = 0;
+                                        char.playAnim(missAnim, true);
+                                        char.holdTimer = 0;
                                 }
                         }
                         note.hitByOpponent = true;
                         return;
                 }
 
-                // Hit (sick/good/bad/shit): play the sing animation on the opponent
-                // character, flash the opponent strum, and bump vocals so the player
-                // hears the opponent's voice track.
-                if (!note.noAnimation)
+                // Hit: play sing animation on the character that owns this note.
+                if (!note.noAnimation && char != null)
                 {
-                        var char:Character = dad;
                         var animToPlay:String = singAnimations[Std.int(Math.abs(Math.min(singAnimations.length - 1, note.noteData)))];
-                        if (note.gfNote)
-                                char = gf;
-                        if (char != null)
-                        {
-                                char.playAnim(animToPlay + note.animSuffix, true);
-                                char.holdTimer = 0;
-                        }
+                        char.playAnim(animToPlay + note.animSuffix, true);
+                        char.holdTimer = 0;
                 }
 
-                if (opponentStrums != null)
+                // Flash the strum that the note belongs to.
+                var strumGroup:FlxTypedGroup<StrumNote> = isMustHitSide ? playerStrums : opponentStrums;
+                if (strumGroup != null)
                 {
-                        var spr:StrumNote = opponentStrums.members[note.noteData];
+                        var spr:StrumNote = strumGroup.members[note.noteData];
                         if (spr != null)
                                 spr.playAnim('confirm', true);
                 }
+
+                // Bump vocals so the player hears the voice track for this note.
                 if (!splitVocals && vocals != null)
                         vocals.volume = 1;
 
                 note.hitByOpponent = true;
 
-                // Remove the note from the field so it doesn't linger; remote
-                // notes are visual-only and don't go through the normal scoring
-                // invalidateNote path.
                 if (!note.isSustainNote)
                         invalidateNote(note);
         }

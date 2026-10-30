@@ -773,7 +773,17 @@ class MultiplayerState extends MusicBeatState
                         setStatus('Essa música não tem notas.');
                         return;
                 }
-                socket.send({type: 'chart', notes: notes});
+                // Also send chart events so non-host clients can trigger them.
+                // Events come from the song data and include things like camera
+                // moves, character swaps, screen shakes, etc.
+                var chartEvents:Array<Dynamic> = [];
+                try
+                {
+                        if (song != null && song.events != null)
+                                chartEvents = cast song.events;
+                }
+                catch(e:Dynamic) {}
+                socket.send({type: 'chart', notes: notes, events: chartEvents});
                 socket.send({type: 'start'});
                 setStatus('Enviando a música para o servidor...');
         }
@@ -1000,6 +1010,10 @@ class MultiplayerState extends MusicBeatState
 
                         case 'chart':
                                 MpMatch.storeChart(cast m.entries);
+                                // Store chart events for the non-host client so
+                                // PlayState can trigger them during gameplay.
+                                if (m.events != null)
+                                        MpMatch.storeEvents(cast m.events);
 
                         case 'chartOk':
                                 setStatus('Música enviada: ' + m.count + ' notas. Iniciando...');
@@ -1213,9 +1227,20 @@ class MultiplayerState extends MusicBeatState
                 if (modDir == null || modDir == BASE_FOLDER)
                         modDir = '';
 
+                // Debug: log what we're about to load so crash reports are useful.
+                try { File.saveContent('mp_launch_debug.log',
+                        'modFolder=' + MpMatch.modFolder + '\n' +
+                        'modDir=' + modDir + '\n' +
+                        'songName=' + MpMatch.songName + '\n' +
+                        'songDifficulty=' + MpMatch.songDifficulty + '\n' +
+                        'modsRoot=' + Paths.mods('') + '\n' +
+                        'modExists=' + (modDir != '' ? FileSystem.exists(Paths.mods(modDir)) : 'N/A') + '\n' +
+                        'songPath=' + Paths.mods(modDir + '/songs/' + Paths.formatToSongPath(MpMatch.songName) + '/') + '\n'
+                ); } catch(e:Dynamic) {}
+
                 if (modDir != '' && !FileSystem.exists(Paths.mods(modDir)))
                 {
-                        launchFailed('Mod não instalado: ' + modDir);
+                        launchFailed('Mod não instalado: ' + modDir + ' (esperado em: ' + Paths.mods(modDir) + ')');
                         return;
                 }
 
@@ -1225,9 +1250,26 @@ class MultiplayerState extends MusicBeatState
                 var songFolder:String = Paths.formatToSongPath(MpMatch.songName);
                 try
                 {
+                        // Set the mod directory BEFORE any Paths/Song call so that
+                        // the chart JSON, Inst.ogg, Voices.ogg, stage data, etc. are
+                        // all resolved from mods/<modDir>/songs/<song>/ instead of
+                        // assets/shared/data/<song>/.
                         Mods.currentModDirectory = modDir;
-                        var chart:String = Highscore.formatSong(songFolder, MpMatch.songDifficulty);
-                        PlayState.SONG = Song.loadFromJson(chart, songFolder);
+
+                        // Verify the chart file exists before trying to load it.
+                        var chartFile:String = Highscore.formatSong(songFolder, MpMatch.songDifficulty);
+                        #if sys
+                        var chartPath:String = modDir != ''
+                                ? Paths.mods(modDir + '/data/' + songFolder + '/' + chartFile + '.json')
+                                : '';
+                        if (chartPath != '' && !FileSystem.exists(chartPath))
+                        {
+                                // Also check the mod's songs folder structure
+                                chartPath = Paths.mods(modDir + '/songs/' + songFolder + '/' + chartFile + '.json');
+                        }
+                        #end
+
+                        PlayState.SONG = Song.loadFromJson(chartFile, songFolder);
                         PlayState.SONG.speed = MpMatch.noteSpeed;
                         StageData.loadDirectory(PlayState.SONG);
                         PlayState.isStoryMode = false;
@@ -1235,7 +1277,7 @@ class MultiplayerState extends MusicBeatState
                 }
                 catch (e:Dynamic)
                 {
-                        launchFailed(Std.string(e));
+                        launchFailed(Std.string(e) + ' (mod=' + modDir + ', song=' + songFolder + ')');
                         return;
                 }
 
