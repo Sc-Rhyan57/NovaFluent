@@ -579,7 +579,7 @@ class PlayState extends MusicBeatState
 
 		// "GLOBAL" SCRIPTS
 		#if ((LUA_ALLOWED || HSCRIPT_ALLOWED) && sys)
-		if (!MpMatch.active) for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'scripts/'))
+		for (folder in MpMatch.scriptDirs('scripts/'))
 			for (file in FileSystem.readDirectory(folder))
 			{
 				#if LUA_ALLOWED
@@ -861,7 +861,7 @@ class PlayState extends MusicBeatState
 
 		// SONG SPECIFIC SCRIPTS
 		#if ((LUA_ALLOWED || HSCRIPT_ALLOWED) && sys)
-		if (!MpMatch.active) for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'data/$songName/'))
+		for (folder in MpMatch.scriptDirs('data/$songName/'))
 			for (file in FileSystem.readDirectory(folder))
 			{
 				#if LUA_ALLOWED
@@ -1869,6 +1869,7 @@ class PlayState extends MusicBeatState
 					remoteHead.gfNote = swagNote.gfNote;
 					remoteHead.sustainLength = swagNote.sustainLength;
 					remoteHead.scrollFactor.set();
+				remoteHead.visible = false;
 					if (swagNote.mpId != null)
 						MpMatch.registerRemoteNote(swagNote.mpId, remoteHead);
 					unspawnNotes.push(remoteHead);
@@ -1905,6 +1906,7 @@ class PlayState extends MusicBeatState
 							remotePiece.gfNote = sustainNote.gfNote;
 							remotePiece.noteType = swagNote.noteType;
 							remotePiece.scrollFactor.set();
+							remotePiece.visible = false;
 							remotePiece.parent = remoteHead;
 							remoteHead.tail.push(remotePiece);
 							remotePiece.correctionOffset = remoteHead.height / 2;
@@ -2544,12 +2546,15 @@ class PlayState extends MusicBeatState
 			MpMatch.updateOverlay();
 			if (!MpMatch.isHost)
 				syncRemotePause();
-			MpMatch.placeNameTags(cast playerStrums.members, cast opponentStrums.members);
+			MpMatch.placeNameTags();
 			for (remoteId in MpMatch.takeRemoteHits())
 			{
 				var remoteNote:Note = MpMatch.remoteNotes.get(remoteId);
 				if (remoteNote != null && !remoteNote.wasGoodHit)
+				{
 					remoteNote.wasGoodHit = true;
+					remoteNote.visible = true;
+				}
 			}
 		}
 		if (ClientPrefs.data.pauseButton)
