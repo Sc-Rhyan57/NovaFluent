@@ -24,6 +24,8 @@ class MpModTransfer
 	public static function encode(folder:String):String
 	{
 		var root:String = Paths.mods(folder);
+		if (!FileSystem.exists(root))
+			throw 'pasta do mod não existe: ' + folder;
 		var out = new BytesOutput();
 
 		for (rel in listFiles(root, ''))
@@ -42,6 +44,8 @@ class MpModTransfer
 
 	public static function decodeInto(base64:String, folder:String):Void
 	{
+		if (base64 == null || base64 == '')
+			throw 'mod recebido vazio: ' + folder;
 		var bytes:Bytes = Base64.decode(base64);
 		var input = new BytesInput(bytes);
 		var root:String = Paths.mods(folder);
