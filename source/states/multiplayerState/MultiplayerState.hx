@@ -5,6 +5,7 @@ import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.addons.ui.FlxInputText;
 import flixel.math.FlxRect;
+import flixel.util.FlxSave;
 import flixel.text.FlxText;
 import games.PlayState;
 import games.backend.Highscore;
@@ -24,6 +25,7 @@ import general.backend.Paths;
 import states.freeplayState.FreeplayState;
 import states.loadingState.LoadingState;
 import sys.FileSystem;
+import sys.io.File;
 import sys.thread.Deque;
 import sys.thread.Thread;
 
@@ -62,6 +64,9 @@ class MultiplayerState extends MusicBeatState
 	static final USER_RE = ~/^[A-Za-z0-9]{3,20}$/;
 	static final PASS_RE = ~/^\d{6}$/;
 
+	static var menuMusicOn:Bool = false;
+
+	var loginSave:FlxSave;
 	var events:Deque<Dynamic> = new Deque();
 	var mode:String = 'auth';
 	var groups:Map<String, Array<FlxBasic>> = new Map();
@@ -137,6 +142,14 @@ class MultiplayerState extends MusicBeatState
 		buildLobby();
 		buildCreate();
 		buildRoom();
+
+		loginSave = new FlxSave();
+		loginSave.bind('novaflareMpLogin');
+		if (loginSave.data.username != null)
+			userInput.text = Std.string(loginSave.data.username);
+		if (loginSave.data.password != null)
+			passInput.text = Std.string(loginSave.data.password);
+		playMenuMusic();
 
 		if (MpMatch.pendingStatus != null)
 		{
@@ -376,6 +389,35 @@ class MultiplayerState extends MusicBeatState
 		status.text = s;
 	}
 
+	function saveLogin(user:String, pass:String):Void
+	{
+		loginSave.data.username = user;
+		loginSave.data.password = pass;
+		loginSave.flush();
+	}
+
+	function playMenuMusic():Void
+	{
+		if (menuMusicOn)
+			return;
+		menuMusicOn = true;
+		FlxG.sound.playMusic(Paths.music('freakyMenu'), 0.7);
+	}
+
+	function queueMissingMods():Void
+	{
+		if (!isHost || room == null || roomFolder == null || roomFolder == BASE_FOLDER)
+			return;
+		for (m in cast(room.members, Array<Dynamic>))
+		{
+			var to:String = Std.string(m.username);
+			if (to != MpApi.username && pendingSend.indexOf(to) == -1)
+				pendingSend.push(to);
+		}
+		if (pendingSend.length > 0)
+			ensurePayload();
+	}
+
 	function setProgress(p:Float, text:String):Void
 	{
 		var clamped:Float = Math.max(0, Math.min(1, p));
@@ -403,7 +445,8 @@ class MultiplayerState extends MusicBeatState
 			return;
 		}
 		setStatus('Entrando...');
-		MpApi.login(u, passInput.text, function(s:Int, j:Dynamic) events.add({kind: 'login', status: s, json: j}));
+		var p:String = passInput.text;
+		MpApi.login(u, p, function(s:Int, j:Dynamic) events.add({kind: 'login', status: s, json: j, user: u, pass: p}));
 	}
 
 	function submitRegister():Void
@@ -415,7 +458,8 @@ class MultiplayerState extends MusicBeatState
 			return;
 		}
 		setStatus('Criando conta...');
-		MpApi.register(u, passInput.text, function(s:Int, j:Dynamic) events.add({kind: 'register', status: s, json: j}));
+		var p:String = passInput.text;
+		MpApi.register(u, p, function(s:Int, j:Dynamic) events.add({kind: 'register', status: s, json: j, user: u, pass: p}));
 	}
 
 	function logout():Void
@@ -741,6 +785,7 @@ class MultiplayerState extends MusicBeatState
 			setStatus('Partida encerrada. ' + formatResults());
 		else
 			setStatus('Voltou para a sala.');
+		queueMissingMods();
 	}
 
 	function formatResults():String
@@ -795,6 +840,7 @@ class MultiplayerState extends MusicBeatState
 			case 'login' | 'register':
 				if ((ev.status == 200 || ev.status == 201) && ev.json.success == true)
 				{
+					saveLogin(ev.user, ev.pass);
 					showMode('lobby');
 					setStatus('Escolha um servidor ou crie um.');
 					refreshRooms();
@@ -1047,6 +1093,12 @@ class MultiplayerState extends MusicBeatState
 		if (room == null)
 			return;
 
+		if (MpMatch.modFolder != '' && !FileSystem.exists(Paths.mods(MpMatch.modFolder)))
+		{
+			launchFailed('Mod não instalado: ' + MpMatch.modFolder);
+			return;
+		}
+
 		MpMatch.begin(room, MpApi.username);
 		MpMatch.socket = socket;
 
@@ -1063,13 +1115,28 @@ class MultiplayerState extends MusicBeatState
 		}
 		catch (e:Dynamic)
 		{
-			MpMatch.reset();
-			setStatus('Não consegui carregar a música: ' + Std.string(e));
+			launchFailed(Std.string(e));
 			return;
 		}
 
 		LoadingState.prepareToSong();
 		LoadingState.loadAndSwitchState(new PlayState());
+	}
+
+	function launchFailed(reason:String):Void
+	{
+		MpMatch.active = false;
+		MpMatch.returning = false;
+		MpMatch.socket = null;
+		MpMatch.matchId = null;
+		try
+		{
+			File.saveContent('mp_launch_error.log', 'Motivo: ' + reason + '\n' + haxe.CallStack.toString(haxe.CallStack.callStack()) + '\n');
+		}
+		catch (e:Dynamic)
+		{
+		}
+		setStatus('Não consegui iniciar a partida: ' + reason + ' (detalhes em mp_launch_error.log)');
 	}
 
 	function goBack():Void
@@ -1088,6 +1155,7 @@ class MultiplayerState extends MusicBeatState
 
 	override function destroy():Void
 	{
+		menuMusicOn = false;
 		if (!MpMatch.active && !MpMatch.returning)
 			closeSocket();
 		super.destroy();
