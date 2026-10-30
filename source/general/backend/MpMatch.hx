@@ -1,6 +1,7 @@
 package general.backend;
 
 import flixel.FlxBasic;
+import sys.FileSystem;
 import flixel.FlxCamera;
 import flixel.FlxG;
 import flixel.FlxSprite;
@@ -260,25 +261,28 @@ class MpMatch
 		return [tagLocal, tagRemote];
 	}
 
-	public static function placeNameTags(player:Array<FlxSprite>, opponent:Array<FlxSprite>):Void
+	public static function placeNameTags():Void
 	{
 		if (tagLocal == null || tagRemote == null)
 			return;
 		tagLocal.text = '[ ' + localName + ' ]';
 		tagRemote.text = '[ ' + (opponentName == '' ? 'ESPERANDO' : opponentName) + ' ]';
-		placeTag(tagLocal, player);
-		placeTag(tagRemote, opponent);
+		tagLocal.x = FlxG.width - tagLocal.width - 16;
+		tagRemote.x = 16;
+		tagLocal.y = 36;
+		tagRemote.y = 36;
 	}
 
-	static function placeTag(tag:FlxText, strums:Array<FlxSprite>):Void
+	public static function scriptDirs(sub:String):Array<String>
 	{
-		if (strums == null || strums.length == 0)
-			return;
-		var first:FlxSprite = strums[0];
-		var last:FlxSprite = strums[strums.length - 1];
-		var centerX:Float = (first.x + last.x + last.width) / 2;
-		tag.x = centerX - tag.width / 2;
-		tag.y = first.y - tag.height - 6;
+		if (!active)
+			return Mods.directoriesWithFile(Paths.getSharedPath(), sub);
+		var out:Array<String> = [];
+		if (modFolder != '' && FileSystem.exists(Paths.mods(modFolder + '/' + sub)))
+			out.push(Paths.mods(modFolder + '/' + sub));
+		if (FileSystem.exists(Paths.getSharedPath(sub)))
+			out.push(Paths.getSharedPath(sub));
+		return out;
 	}
 
 	public static function tick():Void
@@ -286,6 +290,7 @@ class MpMatch
 		var s:MpSocket = socket;
 		if (s == null)
 			return;
+		s.pump();
 		var m:Dynamic = s.inbox.pop(false);
 		while (m != null)
 		{
