@@ -68,6 +68,9 @@ class Note extends FlxSprite
 
 	public var ignoreNote:Bool = false;
 	public var hitByOpponent:Bool = false;
+	public var mpRemote:Bool = false;
+	public var mpId:String = null;
+	public var mpReported:Bool = false;
 	public var noteWasHit:Bool = false;
 	public var prevNote:Note;
 	public var nextNote:Note;
@@ -646,7 +649,7 @@ class Note extends FlxSprite
 
 				if (strumTime < Conductor.songPosition + (Conductor.safeZoneOffset * earlyHitMult))
 				{
-					if ((isSustainNote && prevNote.wasGoodHit) || strumTime <= Conductor.songPosition)
+					if (!mpRemote && ((isSustainNote && prevNote.wasGoodHit) || strumTime <= Conductor.songPosition))
 						wasGoodHit = true;
 				}
 			}
