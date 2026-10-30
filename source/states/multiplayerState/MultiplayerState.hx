@@ -4,16 +4,19 @@ import flixel.FlxBasic;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.addons.ui.FlxInputText;
+import flixel.math.FlxRect;
 import flixel.text.FlxText;
-import flixel.ui.FlxButton;
 import games.PlayState;
 import games.backend.Highscore;
 import games.backend.Song;
 import games.backend.StageData;
+import games.backend.WeekData;
 import general.backend.MpApi;
+import general.backend.MpButton;
 import general.backend.MpMatch;
 import general.backend.MpMatch.PendingSong;
 import general.backend.MpModTransfer;
+import general.backend.MpScripts;
 import general.backend.MpSocket;
 import general.backend.MusicBeatState;
 import general.backend.Mods;
@@ -27,8 +30,15 @@ import sys.thread.Thread;
 typedef RoomSlot =
 {
 	var bg:FlxSprite;
-	var text:FlxText;
-	var join:FlxButton;
+	var name:FlxText;
+	var info:FlxText;
+	var join:MpButton;
+};
+
+typedef ButtonEntry =
+{
+	var group:String;
+	var btn:MpButton;
 };
 
 class MultiplayerState extends MusicBeatState
@@ -36,6 +46,18 @@ class MultiplayerState extends MusicBeatState
 	static inline final PX:Int = 40;
 	static inline final SLOTS:Int = 6;
 	static inline final BASE_FOLDER:String = '_base';
+	static inline final CONTENT_W:Int = 1200;
+	static inline final C_BG:Int = 0xFF0B0F14;
+	static inline final C_PANEL:Int = 0xFF141B23;
+	static inline final C_ROW:Int = 0xFF1C2631;
+	static inline final C_TRACK:Int = 0xFF1A222C;
+	static inline final C_TEXT:Int = 0xFFEAF2FF;
+	static inline final C_MUTED:Int = 0xFF8A97A8;
+	static inline final C_ACCENT:Int = 0xFF52FCC0;
+	static inline final B_PRIMARY:Int = 0xFF178A69;
+	static inline final B_SECOND:Int = 0xFF5B3FA8;
+	static inline final B_NEUTRAL:Int = 0xFF2A3644;
+	static inline final B_DANGER:Int = 0xFF8E2A44;
 	static final NOTE_SPEEDS:Array<Float> = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
 	static final USER_RE = ~/^[A-Za-z0-9]{3,20}$/;
 	static final PASS_RE = ~/^\d{6}$/;
@@ -43,6 +65,7 @@ class MultiplayerState extends MusicBeatState
 	var events:Deque<Dynamic> = new Deque();
 	var mode:String = 'auth';
 	var groups:Map<String, Array<FlxBasic>> = new Map();
+	var buttons:Array<ButtonEntry> = [];
 	var status:FlxText;
 
 	var userInput:FlxInputText;
@@ -57,10 +80,10 @@ class MultiplayerState extends MusicBeatState
 
 	var nameInput:FlxInputText;
 	var createPassInput:FlxInputText;
-	var songText:FlxText;
-	var dieButton:FlxButton;
-	var botButton:FlxButton;
-	var speedButton:FlxButton;
+	var createSongText:FlxText;
+	var dieButton:MpButton;
+	var botButton:MpButton;
+	var speedButton:MpButton;
 	var dieOnMiss:Bool = true;
 	var botplay:Bool = false;
 	var speedIndex:Int = 1;
@@ -73,13 +96,23 @@ class MultiplayerState extends MusicBeatState
 	var myReady:Bool = false;
 	var modReady:Bool = false;
 	var roomFolder:String = null;
-	var roomText:FlxText;
+
+	var roomTitle:FlxText;
+	var roomInfo:FlxText;
 	var membersText:FlxText;
+	var songTitle:FlxText;
+	var prevSongButton:MpButton;
+	var nextSongButton:MpButton;
+	var progressBg:FlxSprite;
+	var progressFill:FlxSprite;
+	var progressText:FlxText;
 	var chatText:FlxText;
 	var chatInput:FlxInputText;
 	var chatLines:Array<String> = [];
-	var readyButton:FlxButton;
-	var playButton:FlxButton;
+	var readyButton:MpButton;
+	var playButton:MpButton;
+	var songsList:Array<String> = [];
+	var songIdx:Int = 0;
 
 	var hostPayload:String = null;
 	var encoding:Bool = false;
@@ -94,9 +127,10 @@ class MultiplayerState extends MusicBeatState
 	{
 		super.create();
 
-		add(new FlxSprite().makeGraphic(FlxG.width, FlxG.height, 0xFF0E1216));
+		add(new FlxSprite().makeGraphic(FlxG.width, FlxG.height, C_BG));
 
-		status = new FlxText(PX, FlxG.height - 44, FlxG.width - PX * 2, '', 18);
+		status = new FlxText(PX, FlxG.height - 40, FlxG.width - PX * 2, '', 18);
+		status.color = C_ACCENT;
 		add(status);
 
 		buildAuth();
@@ -104,6 +138,11 @@ class MultiplayerState extends MusicBeatState
 		buildCreate();
 		buildRoom();
 
+		if (MpMatch.pendingStatus != null)
+		{
+			setStatus(MpMatch.pendingStatus);
+			MpMatch.pendingStatus = null;
+		}
 		if (MpMatch.socket != null && (MpMatch.active || MpMatch.returning))
 			resumeRoom();
 		else if (MpApi.token != null)
@@ -123,17 +162,36 @@ class MultiplayerState extends MusicBeatState
 
 	function label(group:String, x:Float, y:Float, w:Int, s:String, size:Int = 18):FlxText
 	{
-		return track(group, new FlxText(x, y, w, s, size));
+		var t:FlxText = new FlxText(x, y, w, s, size);
+		t.color = C_TEXT;
+		return track(group, t);
 	}
 
-	function button(group:String, x:Float, y:Float, s:String, cb:Void->Void):FlxButton
+	function muted(group:String, x:Float, y:Float, w:Int, s:String, size:Int = 15):FlxText
 	{
-		return track(group, new FlxButton(x, y, s, cb));
+		var t:FlxText = new FlxText(x, y, w, s, size);
+		t.color = C_MUTED;
+		return track(group, t);
 	}
 
-	function input(group:String, x:Float, y:Float, w:Int, s:String, password:Bool):FlxInputText
+	function panel(group:String, x:Float, y:Float, w:Int, h:Int, color:Int = C_PANEL):FlxSprite
 	{
-		var field:FlxInputText = track(group, new FlxInputText(x, y, w, s, 18));
+		return track(group, new FlxSprite(x, y).makeGraphic(w, h, color));
+	}
+
+	function button(group:String, x:Float, y:Float, w:Int, h:Int, s:String, color:Int, cb:Void->Void):MpButton
+	{
+		var b:MpButton = new MpButton(x, y, w, h, s, color, cb);
+		add(b.shadow);
+		add(b.bg);
+		add(b.label);
+		buttons.push({group: group, btn: b});
+		return b;
+	}
+
+	function input(group:String, x:Float, y:Float, w:Int, password:Bool):FlxInputText
+	{
+		var field:FlxInputText = track(group, new FlxInputText(x, y, w, '', 18));
 		field.passwordMode = password;
 		return field;
 	}
@@ -150,6 +208,8 @@ class MultiplayerState extends MusicBeatState
 				o.active = show;
 			}
 		}
+		for (entry in buttons)
+			entry.btn.show(entry.group == m);
 
 		if (m == 'lobby')
 		{
@@ -164,60 +224,94 @@ class MultiplayerState extends MusicBeatState
 
 	function buildAuth():Void
 	{
-		label('auth', PX, 110, 600, 'MULTIPLAYER', 32);
-		userInput = input('auth', PX, 170, 360, '', false);
-		passInput = input('auth', PX, 220, 360, '', true);
-		button('auth', PX, 280, 'ENTRAR', submitLogin);
-		button('auth', PX, 330, 'CRIAR CONTA', submitRegister);
-		button('auth', PX, 380, 'VOLTAR', goBack);
+		panel('auth', PX, 60, 560, 420);
+		label('auth', PX + 30, 84, 500, 'MULTIPLAYER', 34);
+		muted('auth', PX + 30, 130, 500, 'Entre na sua conta ou crie uma nova.', 16);
+		muted('auth', PX + 30, 172, 500, 'USUÁRIO (3 a 20 letras e números)', 14);
+		userInput = input('auth', PX + 30, 194, 500, false);
+		muted('auth', PX + 30, 242, 500, 'SENHA', 14);
+		passInput = input('auth', PX + 30, 264, 500, true);
+		button('auth', PX + 30, 330, 240, 48, 'ENTRAR', B_PRIMARY, submitLogin);
+		button('auth', PX + 290, 330, 240, 48, 'CRIAR CONTA', B_SECOND, submitRegister);
+		button('auth', PX + 30, 400, 500, 44, 'VOLTAR', B_NEUTRAL, goBack);
 	}
 
 	function buildLobby():Void
 	{
-		meText = label('lobby', PX, 110, 380, '', 20);
-		button('lobby', PX, 160, 'SAIR DA CONTA', logout);
-		button('lobby', PX, 210, 'CRIAR SERVIDOR', function() showMode('create'));
-		button('lobby', PX, 260, 'VOLTAR', goBack);
+		panel('lobby', PX, 60, 380, 600);
+		meText = label('lobby', PX + 24, 84, 340, '', 22);
+		muted('lobby', PX + 24, 124, 340, 'A lista atualiza sozinha a cada 5 segundos.', 14);
+		button('lobby', PX + 24, 170, 332, 50, 'CRIAR SERVIDOR', B_PRIMARY, function() showMode('create'));
+		button('lobby', PX + 24, 236, 332, 50, 'SAIR DA CONTA', B_DANGER, logout);
+		button('lobby', PX + 24, 602, 332, 44, 'VOLTAR', B_NEUTRAL, goBack);
 
-		var listX:Int = Std.int(FlxG.width * 0.45);
-		var panelW:Int = Std.int(FlxG.width * 0.5);
-		label('lobby', listX, 110, 500, 'SERVIDORES', 22);
+		var listX:Int = PX + 400;
+		var panelW:Int = FlxG.width - listX - PX;
+		panel('lobby', listX, 60, panelW, 600);
+		label('lobby', listX + 24, 84, 400, 'SERVIDORES ABERTOS', 24);
 
 		for (i in 0...SLOTS)
 		{
 			var idx:Int = i;
-			var bg:FlxSprite = track('lobby', new FlxSprite(listX, 150 + i * 62).makeGraphic(panelW, 52, 0xFF1C232B));
-			var text:FlxText = label('lobby', listX + 12, 164 + i * 62, panelW - 150, '', 16);
-			var join:FlxButton = button('lobby', listX + panelW - 120, 158 + i * 62, 'ENTRAR', function() joinFromSlot(idx));
-			slots.push({bg: bg, text: text, join: join});
+			var y:Float = 130 + i * 70;
+			var bg:FlxSprite = panel('lobby', listX + 16, y, panelW - 32, 60, C_ROW);
+			var name:FlxText = label('lobby', listX + 36, y + 8, panelW - 240, '', 18);
+			var info:FlxText = muted('lobby', listX + 36, y + 34, panelW - 240, '', 14);
+			var join:MpButton = button('lobby', listX + panelW - 170, y + 10, 130, 40, 'ENTRAR', B_PRIMARY, function() joinFromSlot(idx));
+			slots.push({bg: bg, name: name, info: info, join: join});
 		}
 
-		joinPassInput = input('lobby', listX, 150 + SLOTS * 62 + 20, 260, '', true);
+		muted('lobby', listX + 24, 566, 400, 'Senha da sala (se a sala tiver):', 14);
+		joinPassInput = input('lobby', listX + 24, 590, 300, true);
 	}
 
 	function buildCreate():Void
 	{
-		label('create', PX, 110, 600, 'NOVO SERVIDOR', 28);
-		songText = label('create', PX, 150, FlxG.width - PX * 2, '', 18);
-		nameInput = input('create', PX, 200, 360, '', false);
-		dieButton = button('create', PX, 250, '', toggleDie);
-		botButton = button('create', PX, 300, '', toggleBot);
-		speedButton = button('create', PX, 350, '', cycleSpeed);
-		createPassInput = input('create', PX, 400, 260, '', false);
-		button('create', PX, 460, 'CRIAR', submitCreate);
-		button('create', PX + 170, 460, 'VOLTAR', function() showMode('lobby'));
+		panel('create', PX, 60, CONTENT_W, 600);
+		label('create', PX + 30, 84, 900, 'NOVO SERVIDOR', 28);
+		createSongText = muted('create', PX + 30, 130, 1100, '', 16);
+		muted('create', PX + 30, 186, 500, 'NOME DO SERVIDOR', 14);
+		nameInput = input('create', PX + 30, 208, 500, false);
+		muted('create', PX + 30, 262, 500, 'SENHA DA SALA (6 dígitos, opcional)', 14);
+		createPassInput = input('create', PX + 30, 284, 300, false);
+
+		dieButton = button('create', PX + 30, 360, 300, 48, '', B_NEUTRAL, toggleDie);
+		botButton = button('create', PX + 350, 360, 300, 48, '', B_NEUTRAL, toggleBot);
+		speedButton = button('create', PX + 670, 360, 300, 48, '', B_NEUTRAL, cycleSpeed);
+
+		button('create', PX + 30, 470, 300, 52, 'CRIAR SERVIDOR', B_PRIMARY, submitCreate);
+		button('create', PX + 350, 470, 300, 52, 'VOLTAR', B_NEUTRAL, function() showMode('lobby'));
 	}
 
 	function buildRoom():Void
 	{
-		roomText = label('room', PX, 100, FlxG.width - PX * 2, '', 20);
-		membersText = label('room', PX, 150, Std.int(FlxG.width * 0.4), '', 18);
-		chatText = label('room', Std.int(FlxG.width * 0.45), 150, Std.int(FlxG.width * 0.5), '', 16);
-		chatInput = input('room', Std.int(FlxG.width * 0.45), FlxG.height - 160, 300, '', false);
-		button('room', Std.int(FlxG.width * 0.45) + 310, FlxG.height - 160, 'ENVIAR', sendChat);
-		readyButton = button('room', PX, FlxG.height - 110, 'PRONTO', toggleReady);
-		playButton = button('room', PX + 170, FlxG.height - 110, 'PLAY', startMatch);
-		button('room', PX + 340, FlxG.height - 110, 'SAIR DA SALA', leaveRoom);
+		panel('room', PX, 40, CONTENT_W, 76);
+		roomTitle = label('room', PX + 24, 54, CONTENT_W - 48, '', 26);
+		roomInfo = muted('room', PX + 24, 90, CONTENT_W - 48, '', 15);
+
+		panel('room', PX, 130, 360, 430);
+		label('room', PX + 20, 146, 320, 'JOGADORES', 18);
+		membersText = label('room', PX + 20, 178, 320, '', 18);
+
+		panel('room', 420, 130, 820, 150);
+		muted('room', 440, 146, 780, 'MÚSICA DA PARTIDA', 14);
+		songTitle = label('room', 440, 168, 780, '', 24);
+		prevSongButton = button('room', 440, 226, 170, 40, '< MÚSICA', B_NEUTRAL, function() cycleSong(-1));
+		nextSongButton = button('room', 624, 226, 170, 40, 'MÚSICA >', B_NEUTRAL, function() cycleSong(1));
+
+		progressBg = track('room', new FlxSprite(420, 296).makeGraphic(820, 22, C_TRACK));
+		progressFill = track('room', new FlxSprite(420, 296).makeGraphic(820, 22, C_ACCENT));
+		progressFill.clipRect = FlxRect.get(0, 0, 0, 22);
+		progressText = muted('room', 420, 324, 820, '', 14);
+
+		panel('room', 420, 352, 820, 208);
+		chatText = label('room', 440, 366, 780, '', 15);
+		chatInput = input('room', 440, 528, 600, false);
+		button('room', 1060, 524, 160, 40, 'ENVIAR', B_PRIMARY, sendChat);
+
+		readyButton = button('room', PX, 580, 230, 56, 'PRONTO', B_PRIMARY, toggleReady);
+		playButton = button('room', PX + 250, 580, 230, 56, 'PLAY', B_SECOND, startMatch);
+		button('room', PX + 500, 580, 260, 56, 'SAIR DA SALA', B_DANGER, leaveRoom);
 	}
 
 	override function update(elapsed:Float):Void
@@ -259,6 +353,15 @@ class MultiplayerState extends MusicBeatState
 			}
 		}
 
+		for (entry in buttons)
+		{
+			if (entry.btn.clicked())
+			{
+				entry.btn.onClick();
+				break;
+			}
+		}
+
 		if (controls.BACK)
 		{
 			if (mode == 'room')
@@ -271,6 +374,18 @@ class MultiplayerState extends MusicBeatState
 	function setStatus(s:String):Void
 	{
 		status.text = s;
+	}
+
+	function setProgress(p:Float, text:String):Void
+	{
+		var clamped:Float = Math.max(0, Math.min(1, p));
+		progressFill.clipRect = FlxRect.get(0, 0, Std.int(820 * clamped), 22);
+		progressText.text = text;
+	}
+
+	function yn(v:Dynamic):String
+	{
+		return v == true ? 'SIM' : 'NÃO';
 	}
 
 	function errorOf(json:Dynamic):String
@@ -322,10 +437,11 @@ class MultiplayerState extends MusicBeatState
 			var show:Bool = i < roomCount;
 			slots[i].bg.visible = show;
 			slots[i].bg.active = show;
-			slots[i].text.visible = show;
-			slots[i].text.active = show;
-			slots[i].join.visible = show;
-			slots[i].join.active = show;
+			slots[i].name.visible = show;
+			slots[i].name.active = show;
+			slots[i].info.visible = show;
+			slots[i].info.active = show;
+			slots[i].join.show(show);
 		}
 	}
 
@@ -336,8 +452,8 @@ class MultiplayerState extends MusicBeatState
 		for (i in 0...roomCount)
 		{
 			var r:Dynamic = list[i];
-			var lock:String = r.hasPassword == true ? '  [SENHA]' : '';
-			slots[i].text.text = r.name + '  ·  ' + r.host + '  ·  ' + r.players + '/' + r.max + '  ·  ' + r.settings.song.name + lock;
+			slots[i].name.text = Std.string(r.name) + (r.hasPassword == true ? '   [SENHA]' : '');
+			slots[i].info.text = 'Host: ' + r.host + '   ·   ' + r.players + '/' + r.max + ' jogadores   ·   Música: ' + r.settings.song.name;
 		}
 		applySlots();
 		if (list.length == 0)
@@ -389,12 +505,12 @@ class MultiplayerState extends MusicBeatState
 	{
 		var p:PendingSong = MpMatch.pendingSong;
 		if (p == null)
-			songText.text = 'Abra o MULTI pelo Freeplay, depois de escolher a música.';
+			createSongText.text = 'Abra o MULTI pelo Freeplay depois de escolher a música. A música escolhida no Freeplay será a primeira da partida.';
 		else
-			songText.text = 'MÚSICA: ' + p.name + ' (dificuldade ' + p.difficulty + ')   ·   MOD: ' + createFolder();
-		dieButton.label.text = 'MORRER AO ERRAR: ' + (dieOnMiss ? 'SIM' : 'NÃO');
-		botButton.label.text = 'BOTPLAY: ' + (botplay ? 'SIM' : 'NÃO');
-		speedButton.label.text = 'VELOCIDADE: ' + NOTE_SPEEDS[speedIndex];
+			createSongText.text = 'Música: ' + p.name + '  (dificuldade ' + p.difficulty + ')   ·   Mod: ' + createFolder();
+		dieButton.setLabel('MORRER AO ERRAR: ' + yn(dieOnMiss));
+		botButton.setLabel('BOTPLAY: ' + yn(botplay));
+		speedButton.setLabel('VELOCIDADE: ' + NOTE_SPEEDS[speedIndex]);
 	}
 
 	function submitCreate():Void
@@ -467,11 +583,96 @@ class MultiplayerState extends MusicBeatState
 		refreshRoomUI();
 	}
 
+	function roomModDirectory():String
+	{
+		if (room == null || room.mod == null)
+			return '';
+		var folder:String = Std.string(room.mod.folder);
+		return folder == BASE_FOLDER ? '' : folder;
+	}
+
+	function scanSongs():Void
+	{
+		songsList = [];
+		var previous:String = Mods.currentModDirectory;
+		Mods.currentModDirectory = roomModDirectory();
+		try
+		{
+			WeekData.reloadWeekFiles(false);
+			for (w in WeekData.weeksList)
+			{
+				var leWeek:WeekData = WeekData.weeksLoaded.get(w);
+				if (leWeek == null || leWeek.songs == null)
+					continue;
+				for (song in leWeek.songs)
+				{
+					var n:String = Std.string(song[0]);
+					if (n != '' && songsList.indexOf(n) == -1)
+						songsList.push(n);
+				}
+			}
+		}
+		catch (e:Dynamic)
+		{
+		}
+		Mods.currentModDirectory = previous;
+		syncSongIndex();
+	}
+
+	function syncSongIndex():Void
+	{
+		if (room == null)
+			return;
+		var current:String = Std.string(room.settings.song.name);
+		songIdx = songsList.indexOf(current);
+		if (songIdx == -1)
+		{
+			songsList.unshift(current);
+			songIdx = 0;
+		}
+	}
+
+	function cycleSong(delta:Int):Void
+	{
+		if (!isHost || socket == null || room == null || songsList.length == 0)
+			return;
+		songIdx = (songIdx + delta + songsList.length) % songsList.length;
+		socket.send({type: 'setSong', name: songsList[songIdx], difficulty: room.settings.song.difficulty});
+		setStatus('Trocando a música para ' + songsList[songIdx] + '...');
+	}
+
+	function loadRoomSong():Dynamic
+	{
+		var s:Dynamic = room.settings.song;
+		var folder:String = Paths.formatToSongPath(Std.string(s.name));
+		try
+		{
+			Mods.currentModDirectory = roomModDirectory();
+			return Song.loadFromJson(Highscore.formatSong(folder, Std.int(s.difficulty)), folder);
+		}
+		catch (e:Dynamic)
+		{
+			setStatus('Não consegui carregar a música: ' + Std.string(e));
+			return null;
+		}
+	}
+
 	function startMatch():Void
 	{
-		if (socket == null || !isHost)
+		if (socket == null || !isHost || room == null)
 			return;
+		var song:Dynamic = loadRoomSong();
+		if (song == null)
+			return;
+		var notes:Array<Dynamic> = MpMatch.buildChart(song);
+		if (notes.length == 0)
+		{
+			setStatus('Essa música não tem notas.');
+			return;
+		}
+		socket.send({type: 'chart', notes: notes});
 		socket.send({type: 'start'});
+		setStatus('Enviando a música para o servidor...');
 	}
 
 	function sendChat():Void
@@ -495,6 +696,7 @@ class MultiplayerState extends MusicBeatState
 		room = null;
 		isHost = false;
 		pendingStart = false;
+		setProgress(0, '');
 		showMode('lobby');
 		setStatus('Você saiu da sala.');
 		refreshRooms();
@@ -513,7 +715,10 @@ class MultiplayerState extends MusicBeatState
 		hostPayload = null;
 		pendingSend = [];
 		modReady = isHost || roomFolder == BASE_FOLDER || FileSystem.exists(Paths.mods(roomFolder));
+		if (isHost)
+			scanSongs();
 		showMode('room');
+		setProgress(modReady ? 1 : 0, modReady ? 'Mod pronto.' : 'Aguardando o host enviar o mod.');
 		setStatus(modReady ? 'Pronto para jogar.' : 'Aguardando o host enviar o mod...');
 	}
 
@@ -528,7 +733,10 @@ class MultiplayerState extends MusicBeatState
 		chatLines = [];
 		MpMatch.returning = false;
 		MpMatch.active = false;
+		if (isHost)
+			scanSongs();
 		showMode('room');
+		setProgress(1, 'Mod pronto.');
 		if (MpMatch.lastResults.length > 0)
 			setStatus('Partida encerrada. ' + formatResults());
 		else
@@ -549,23 +757,28 @@ class MultiplayerState extends MusicBeatState
 			return;
 
 		var s:Dynamic = room.settings;
-		roomText.text = room.name + '  ·  música: ' + s.song.name + ' (dif ' + s.song.difficulty + ')  ·  mod: ' + room.mod.name
-			+ '  ·  morrer ao errar: ' + (s.dieOnMiss == true ? 'sim' : 'não') + '  ·  botplay: ' + (s.botplay == true ? 'sim' : 'não')
-			+ '  ·  velocidade: ' + s.noteSpeed;
+		roomTitle.text = Std.string(room.name);
+		roomInfo.text = 'Mod: ' + room.mod.name + '   ·   Morrer ao errar: ' + yn(s.dieOnMiss) + '   ·   Botplay: ' + yn(s.botplay)
+			+ '   ·   Velocidade: ' + s.noteSpeed;
+		songTitle.text = Std.string(s.song.name) + '   (dificuldade ' + s.song.difficulty + ')';
 
 		var lines:Array<String> = [];
 		for (m in cast(room.members, Array<Dynamic>))
-			lines.push((m.username == room.host ? '[HOST] ' : '') + m.username + (m.ready == true ? '  (pronto)' : ''));
-		membersText.text = 'Jogadores:\n' + lines.join('\n');
+		{
+			var tag:String = m.username == room.host ? '[HOST] ' : '';
+			var state:String = m.ready == true ? '  - PRONTO' : '  - aguardando';
+			lines.push(tag + m.username + state);
+		}
+		membersText.text = lines.join('\n');
 
-		chatText.text = chatLines.slice(Std.int(Math.max(0, chatLines.length - 10))).join('\n');
+		chatText.text = chatLines.slice(Std.int(Math.max(0, chatLines.length - 9))).join('\n');
 
-		readyButton.visible = !isHost && modReady;
-		readyButton.active = !isHost && modReady;
-		readyButton.label.text = myReady ? 'CANCELAR' : 'PRONTO';
+		prevSongButton.show(isHost);
+		nextSongButton.show(isHost);
 
-		playButton.visible = isHost;
-		playButton.active = isHost;
+		readyButton.show(!isHost && modReady);
+		readyButton.setLabel(myReady ? 'CANCELAR' : 'PRONTO');
+		playButton.show(isHost);
 	}
 
 	function appendChat(line:String):Void
@@ -617,6 +830,7 @@ class MultiplayerState extends MusicBeatState
 				encoding = false;
 				if (ev.error != null)
 				{
+					setProgress(0, 'Falha ao preparar o mod.');
 					setStatus('Falha ao preparar o mod: ' + ev.error);
 					return;
 				}
@@ -627,13 +841,18 @@ class MultiplayerState extends MusicBeatState
 				if (ev.ok == true)
 				{
 					modReady = true;
+					setProgress(1, 'Mod instalado.');
 					setStatus('Mod instalado. Clique em PRONTO.');
 					refreshRoomUI();
 				}
 				else
 				{
+					setProgress(0, 'Falha ao instalar o mod.');
 					setStatus('Falha ao instalar o mod: ' + ev.error);
 				}
+
+			case 'scripts':
+				MpMatch.scriptPaths = cast ev.paths;
 		}
 	}
 
@@ -668,7 +887,15 @@ class MultiplayerState extends MusicBeatState
 
 			case 'roomState':
 				room = m.room;
+				if (isHost)
+					syncSongIndex();
 				refreshRoomUI();
+
+			case 'chart':
+				MpMatch.storeChart(cast m.entries);
+
+			case 'chartOk':
+				setStatus('Música enviada: ' + m.count + ' notas. Iniciando...');
 
 			case 'playerJoined':
 				appendChat('* ' + m.username + ' entrou');
@@ -689,7 +916,10 @@ class MultiplayerState extends MusicBeatState
 
 			case 'start':
 				startAt = m.startAt;
+				MpMatch.matchId = Std.string(m.matchId);
 				pendingStart = true;
+				MpMatch.scriptPaths = [];
+				MpScripts.fetch(function(paths:Array<String>) events.add({kind: 'scripts', paths: paths}));
 				setStatus('Partida começando...');
 
 			case 'end':
@@ -724,6 +954,7 @@ class MultiplayerState extends MusicBeatState
 
 		encoding = true;
 		var folder:String = roomFolder;
+		setProgress(0, 'Preparando o mod para enviar...');
 		setStatus('Preparando o mod para enviar...');
 		Thread.create(() ->
 		{
@@ -763,6 +994,7 @@ class MultiplayerState extends MusicBeatState
 				data: hostPayload.substr(i * size, size)
 			});
 		}
+		setProgress(1, 'Mod enviado para ' + to + ' (' + total + ' pedaços)');
 		setStatus('Mod enviado para ' + to + ' (' + total + ' pedaços).');
 	}
 
@@ -784,7 +1016,8 @@ class MultiplayerState extends MusicBeatState
 		incoming[idx] = m.data;
 
 		var pct:Int = Std.int(incomingCount * 100 / total);
-		setStatus('Recebendo o mod: ' + pct + '% (' + incomingCount + '/' + total + ' pedaços)');
+		setProgress(incomingCount / total, 'Baixando o mod do host: ' + pct + '%   (' + incomingCount + '/' + total + ' pedaços)');
+		setStatus('Recebendo o mod: ' + pct + '%');
 
 		if (incomingCount == total)
 		{
@@ -792,6 +1025,7 @@ class MultiplayerState extends MusicBeatState
 			var folder:String = roomFolder;
 			incoming = null;
 			incomingCount = 0;
+			setProgress(1, 'Instalando o mod...');
 			setStatus('Instalando o mod...');
 			Thread.create(() ->
 			{
