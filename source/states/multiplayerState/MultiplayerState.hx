@@ -17,6 +17,7 @@ import general.backend.MpButton;
 import general.backend.MpMatch;
 import general.backend.MpMatch.PendingSong;
 import general.backend.MpModTransfer;
+import general.backend.MpPresence;
 import general.backend.MpScripts;
 import general.backend.MpSocket;
 import general.backend.MusicBeatState;
@@ -123,6 +124,9 @@ class MultiplayerState extends MusicBeatState
 	var encoding:Bool = false;
 	var pendingSend:Array<String> = [];
 	var chunkQueue:Array<{to:String, index:Int, total:Int}> = [];
+	// Pedaços enviados e ainda não confirmados (modAck), por destinatário.
+	var inFlight:Map<String, Int> = new Map();
+	static final CHUNK_WINDOW:Int = 4;
 	var incoming:Array<String> = null;
 	var incomingCount:Int = 0;
 
@@ -132,6 +136,7 @@ class MultiplayerState extends MusicBeatState
 	override function create():Void
 	{
 		super.create();
+		MpPresence.reset();
 
 		add(new FlxSprite().makeGraphic(FlxG.width, FlxG.height, C_BG));
 
@@ -213,6 +218,7 @@ class MultiplayerState extends MusicBeatState
 	function showMode(m:String):Void
 	{
 		mode = m;
+		updatePresence();
 		for (k in groups.keys())
 		{
 			var show:Bool = k == m;
@@ -344,7 +350,6 @@ class MultiplayerState extends MusicBeatState
 		var s:MpSocket = socket;
 		if (s != null)
 		{
-			s.pump();
 			var msg:Dynamic = s.inbox.pop(false);
 			while (msg != null)
 			{
@@ -761,6 +766,8 @@ class MultiplayerState extends MusicBeatState
 		incomingCount = 0;
 		hostPayload = null;
 		pendingSend = [];
+		chunkQueue = [];
+		inFlight = new Map();
 		modReady = isHost || roomFolder == BASE_FOLDER || FileSystem.exists(Paths.mods(roomFolder));
 		if (isHost)
 			scanSongs();
@@ -797,6 +804,25 @@ class MultiplayerState extends MusicBeatState
 		for (r in MpMatch.lastResults)
 			parts.push(r.username + ' ' + r.score + ' pts' + (r.dead == true ? ' (morreu)' : ''));
 		return parts.join('  |  ');
+	}
+
+	function updatePresence():Void
+	{
+		switch (mode)
+		{
+			case 'room':
+				if (room != null)
+				{
+					var n:Int = room.members != null ? room.members.length : 0;
+					MpPresence.set('Servidor: ' + room.name, (isHost ? 'Host' : 'Jogador') + ' · ' + n + (n == 1 ? ' jogador' : ' jogadores'));
+				}
+			case 'create':
+				MpPresence.set('Multiplayer', 'Criando servidor');
+			case 'auth':
+				MpPresence.set('Multiplayer', 'Fazendo login');
+			default:
+				MpPresence.set('Multiplayer', 'No lobby');
+		}
 	}
 
 	function refreshRoomUI():Void
@@ -939,6 +965,7 @@ class MultiplayerState extends MusicBeatState
 				if (isHost)
 					syncSongIndex();
 				refreshRoomUI();
+				updatePresence();
 
 			case 'chart':
 				MpMatch.storeChart(cast m.entries);
@@ -956,6 +983,18 @@ class MultiplayerState extends MusicBeatState
 
 			case 'playerLeft':
 				appendChat('* ' + m.username + ' saiu');
+				if (isHost)
+				{
+					inFlight.remove(m.username);
+					chunkQueue = chunkQueue.filter(function(c) return c.to != m.username);
+				}
+
+			case 'modAck':
+				if (isHost && m.index != null && inFlight.exists(m.from))
+				{
+					var left:Int = inFlight.get(m.from) - 1;
+					inFlight.set(m.from, left < 0 ? 0 : left);
+				}
 
 			case 'chat':
 				appendChat(m.from + ': ' + m.text);
@@ -1044,10 +1083,19 @@ class MultiplayerState extends MusicBeatState
 			return;
 
 		var size:Int = MpModTransfer.CHUNK_CHARS;
-		var budget:Int = 4;
-		while (budget > 0 && chunkQueue.length > 0)
+		// Um pedaço por frame, e só para quem ainda tem menos de CHUNK_WINDOW pedaços sem confirmação.
+		var i:Int = 0;
+		while (i < chunkQueue.length)
 		{
-			var c = chunkQueue.shift();
+			var c = chunkQueue[i];
+			var flying:Int = inFlight.exists(c.to) ? inFlight.get(c.to) : 0;
+			if (flying >= CHUNK_WINDOW)
+			{
+				i++;
+				continue;
+			}
+			chunkQueue.splice(i, 1);
+			inFlight.set(c.to, flying + 1);
 			socket.send({
 				type: 'modChunk',
 				to: c.to,
@@ -1055,17 +1103,20 @@ class MultiplayerState extends MusicBeatState
 				total: c.total,
 				data: hostPayload.substr(c.index * size, size)
 			});
-			budget--;
 			if (c.index == c.total - 1)
 			{
 				setProgress(1, 'Mod enviado para ' + c.to + ' (' + c.total + ' pedaços)');
 				setStatus('Mod enviado para ' + c.to + ' (' + c.total + ' pedaços).');
 			}
+			return;
 		}
 	}
 
 	function receiveChunk(m:Dynamic):Void
 	{
+		// Confirma o pedaço para o host liberar o próximo (controle de fluxo).
+		if (socket != null)
+			socket.send({type: 'modAck', index: m.index});
 		if (modReady || roomFolder == null)
 			return;
 

@@ -290,7 +290,6 @@ class MpMatch
 		var s:MpSocket = socket;
 		if (s == null)
 			return;
-		s.pump();
 		var m:Dynamic = s.inbox.pop(false);
 		while (m != null)
 		{

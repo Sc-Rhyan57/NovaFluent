@@ -1,19 +1,38 @@
 package general.backend;
 
+import flixel.FlxG;
 import haxe.Json;
+import haxe.Timer;
 import sys.thread.Deque;
 
 class MpSocket
 {
+	// Intervalo do ping de keepalive (segundos). O servidor responde com pong.
+	static final PING_EVERY:Float = 20;
+
+	// Socket atual. Só existe um por vez; o hook de frame usa essa referência.
+	public static var current:MpSocket = null;
+	static var hooked:Bool = false;
+
 	public var inbox:Deque<Dynamic> = new Deque();
 	public var open:Bool = false;
 
 	var ws:Dynamic;
 	var outbox:Array<String> = [];
 	var closedSent:Bool = false;
+	var lastPing:Float = 0;
 
 	public function new(url:String)
 	{
+		current = this;
+		lastPing = Timer.stamp();
+		if (!hooked)
+		{
+			hooked = true;
+			// Lê o socket e mantém o ping em qualquer tela (menu, pausa, loading, partida).
+			FlxG.signals.postUpdate.add(frame);
+		}
+
 		ws = new hx.ws.WebSocket(url);
 
 		ws.onopen = function()
@@ -86,6 +105,26 @@ class MpSocket
 		}
 	}
 
+	static function frame():Void
+	{
+		var s:MpSocket = current;
+		if (s == null)
+			return;
+		s.pump();
+		s.heartbeat();
+	}
+
+	function heartbeat():Void
+	{
+		if (!open)
+			return;
+		var now:Float = Timer.stamp();
+		if (now - lastPing < PING_EVERY)
+			return;
+		lastPing = now;
+		rawSend('{"type":"ping"}');
+	}
+
 	public function pump():Void
 	{
 		if (ws == null)
@@ -105,6 +144,8 @@ class MpSocket
 
 	public function close():Void
 	{
+		if (current == this)
+			current = null;
 		open = false;
 		outbox = [];
 		closedSent = true;
