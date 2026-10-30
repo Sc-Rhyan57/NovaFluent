@@ -2,6 +2,7 @@
 package scripts.lua;
 
 import general.backend.DeepDebugTracker;
+import general.backend.MpMatch;
 
 import haxe.Json;
 
@@ -437,7 +438,8 @@ class FunkinLua
 							return;
 						}
 
-				new FunkinLua(foundScript);
+				if (!MpMatch.active)
+					new FunkinLua(foundScript);
 				return;
 			}
 			luaTrace("addLuaScript: Script doesn't exist!", false, false, FlxColor.RED);
