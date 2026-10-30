@@ -2,6 +2,7 @@ package states.loadingState.backend;
 
 import general.backend.ClientPrefs;
 import general.backend.Mods;
+import general.backend.MpMatch;
 import general.backend.Paths;
 import games.backend.Rating;
 import games.backend.Song;
@@ -241,6 +242,8 @@ class DataPreload
 
 	static function preloadScript()
 	{
+		if (MpMatch.active)
+			return;
 		#if ((LUA_ALLOWED || HSCRIPT_ALLOWED) && sys)
 		for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'scripts/'))
 			for (file in FileSystem.readDirectory(folder))
