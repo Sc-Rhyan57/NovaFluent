@@ -1,6 +1,7 @@
 ﻿package games.objects;
 
 import flixel.math.FlxRect;
+import general.backend.MpMatch;
 
 import general.backend.animation.PsychAnimationController;
 
@@ -649,7 +650,7 @@ class Note extends FlxSprite
 
 				if (strumTime < Conductor.songPosition + (Conductor.safeZoneOffset * earlyHitMult))
 				{
-					if (!mpRemote && ((isSustainNote && prevNote.wasGoodHit) || strumTime <= Conductor.songPosition))
+					if ((!mpRemote || MpMatch.opponentName == '') && ((isSustainNote && prevNote.wasGoodHit) || strumTime <= Conductor.songPosition))
 						wasGoodHit = true;
 				}
 			}

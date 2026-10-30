@@ -12,6 +12,19 @@ class MpApi
 	public static var token:String = null;
 	public static var username:String = null;
 
+	static function httpErrorMessage(status:Int):String
+	{
+		if (status == 429)
+			return 'Muitas requisições. Aguarde um pouco.';
+		if (status == 403)
+			return 'Sessão inválida. Faça login novamente.';
+		if (status == 404)
+			return 'Rota não encontrada no servidor.';
+		if (status >= 500)
+			return 'Erro interno do servidor. Tente de novo.';
+		return 'Erro do servidor (HTTP ' + status + ').';
+	}
+
 	public static function call(method:String, path:String, body:Dynamic, onDone:Int->Dynamic->Void):Void
 	{
 		Thread.create(() ->
@@ -32,9 +45,14 @@ class MpApi
 				http.setPostData(Json.stringify(body));
 			http.request(method == 'POST');
 
-			if (error != null)
+			if (error != null && status <= 0)
 			{
 				onDone(0, {success: false, message: 'Sem conexão com o servidor.'});
+				return;
+			}
+			if (error != null && raw == '')
+			{
+				onDone(status, {success: false, message: httpErrorMessage(status)});
 				return;
 			}
 

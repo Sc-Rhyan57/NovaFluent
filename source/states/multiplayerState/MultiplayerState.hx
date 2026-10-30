@@ -122,6 +122,7 @@ class MultiplayerState extends MusicBeatState
 	var hostPayload:String = null;
 	var encoding:Bool = false;
 	var pendingSend:Array<String> = [];
+	var chunkQueue:Array<{to:String, index:Int, total:Int}> = [];
 	var incoming:Array<String> = null;
 	var incomingCount:Int = 0;
 
@@ -330,6 +331,8 @@ class MultiplayerState extends MusicBeatState
 	override function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
+
+		pumpChunks();
 
 		var ev:Dynamic = events.pop(false);
 		while (ev != null)
@@ -1031,17 +1034,34 @@ class MultiplayerState extends MusicBeatState
 		var size:Int = MpModTransfer.CHUNK_CHARS;
 		var total:Int = Std.int(Math.max(1, Math.ceil(hostPayload.length / size)));
 		for (i in 0...total)
+			chunkQueue.push({to: to, index: i, total: total});
+		setStatus('Enviando o mod para ' + to + ' (' + total + ' pedaços)...');
+	}
+
+	function pumpChunks():Void
+	{
+		if (chunkQueue.length == 0 || socket == null || hostPayload == null)
+			return;
+
+		var size:Int = MpModTransfer.CHUNK_CHARS;
+		var budget:Int = 4;
+		while (budget > 0 && chunkQueue.length > 0)
 		{
+			var c = chunkQueue.shift();
 			socket.send({
 				type: 'modChunk',
-				to: to,
-				index: i,
-				total: total,
-				data: hostPayload.substr(i * size, size)
+				to: c.to,
+				index: c.index,
+				total: c.total,
+				data: hostPayload.substr(c.index * size, size)
 			});
+			budget--;
+			if (c.index == c.total - 1)
+			{
+				setProgress(1, 'Mod enviado para ' + c.to + ' (' + c.total + ' pedaços)');
+				setStatus('Mod enviado para ' + c.to + ' (' + c.total + ' pedaços).');
+			}
 		}
-		setProgress(1, 'Mod enviado para ' + to + ' (' + total + ' pedaços)');
-		setStatus('Mod enviado para ' + to + ' (' + total + ' pedaços).');
 	}
 
 	function receiveChunk(m:Dynamic):Void

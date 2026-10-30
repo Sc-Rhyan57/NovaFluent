@@ -438,8 +438,7 @@ class FunkinLua
 							return;
 						}
 
-				if (!MpMatch.active)
-					new FunkinLua(foundScript);
+				new FunkinLua(foundScript);
 				return;
 			}
 			luaTrace("addLuaScript: Script doesn't exist!", false, false, FlxColor.RED);

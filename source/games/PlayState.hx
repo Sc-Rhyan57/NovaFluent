@@ -1832,7 +1832,9 @@ class PlayState extends MusicBeatState
 					oldNote = null;
 
 				var swagNote:Note = new Note(daStrumTime, daNoteData, oldNote);
-				swagNote.mustPress = MpMatch.active ? true : gottaHitNote;
+				var mpMine:Bool = !MpMatch.active || (MpMatch.isHost == gottaHitNote);
+				swagNote.mustPress = MpMatch.active ? mpMine : gottaHitNote;
+				swagNote.mpRemote = MpMatch.active && !mpMine;
 				swagNote.sustainLength = songNotes[2];
 
 				if (isPe104)
@@ -1857,22 +1859,11 @@ class PlayState extends MusicBeatState
 
 				swagNote.scrollFactor.set();
 
-				var remoteHead:Note = null;
 				if (MpMatch.active)
 				{
 					swagNote.mpId = MpMatch.takeId(MpMatch.keyOf(daStrumTime, mpLane, MpMatch.typeOf(rawNoteType)));
-					remoteHead = new Note(daStrumTime, daNoteData, null);
-					remoteHead.mustPress = false;
-					remoteHead.mpRemote = true;
-					remoteHead.mpId = swagNote.mpId;
-					remoteHead.noteType = swagNote.noteType;
-					remoteHead.gfNote = swagNote.gfNote;
-					remoteHead.sustainLength = swagNote.sustainLength;
-					remoteHead.scrollFactor.set();
-				remoteHead.visible = false;
-					if (swagNote.mpId != null)
-						MpMatch.registerRemoteNote(swagNote.mpId, remoteHead);
-					unspawnNotes.push(remoteHead);
+					if (swagNote.mpRemote && swagNote.mpId != null)
+						MpMatch.registerRemoteNote(swagNote.mpId, swagNote);
 				}
 				unspawnNotes.push(swagNote);
 
@@ -1881,14 +1872,14 @@ class PlayState extends MusicBeatState
 
 				if (floorSus > 0)
 				{
-					var remoteOld:Note = remoteHead;
 					for (susNote in 0...floorSus + 1)
 					{
 						oldNote = unspawnNotes[Std.int(unspawnNotes.length - 1)];
 
 						var sustainNote:Note = new Note(daStrumTime + (Conductor.stepCrochet * susNote), daNoteData, oldNote, true);
 						sustainNote.hitMultUpdate(susNote, floorSus);
-						sustainNote.mustPress = MpMatch.active ? true : gottaHitNote;
+						sustainNote.mustPress = swagNote.mustPress;
+						sustainNote.mpRemote = swagNote.mpRemote;
 						sustainNote.gfNote = (section.gfSection && (songNotes[1]<(SONG.mania + 1)));
 						sustainNote.noteType = swagNote.noteType;
 						sustainNote.scrollFactor.set();
@@ -1896,31 +1887,8 @@ class PlayState extends MusicBeatState
 						unspawnNotes.push(sustainNote);
 						swagNote.tail.push(sustainNote);
 						sustainNote.mpId = MpMatch.active ? MpMatch.takeId(MpMatch.keyOf(daStrumTime + (Conductor.stepCrochet * susNote), mpLane, 'sustain')) : null;
-						if (remoteHead != null)
-						{
-							var remotePiece:Note = new Note(daStrumTime + (Conductor.stepCrochet * susNote), daNoteData, remoteOld, true);
-							remotePiece.hitMultUpdate(susNote, floorSus);
-							remotePiece.mustPress = false;
-							remotePiece.mpRemote = true;
-							remotePiece.mpId = sustainNote.mpId;
-							remotePiece.gfNote = sustainNote.gfNote;
-							remotePiece.noteType = swagNote.noteType;
-							remotePiece.scrollFactor.set();
-							remotePiece.visible = false;
-							remotePiece.parent = remoteHead;
-							remoteHead.tail.push(remotePiece);
-							remotePiece.correctionOffset = remoteHead.height / 2;
-							if (!PlayState.isPixelStage && remoteOld.isSustainNote)
-							{
-								remoteOld.scale.y *= Note.SUSTAIN_SIZE / remoteOld.frameHeight;
-								remoteOld.scale.y /= playbackRate;
-								remoteOld.updateHitbox();
-							}
-							if (sustainNote.mpId != null)
-								MpMatch.registerRemoteNote(sustainNote.mpId, remotePiece);
-							unspawnNotes.push(remotePiece);
-							remoteOld = remotePiece;
-						}
+						if (sustainNote.mpRemote && sustainNote.mpId != null)
+							MpMatch.registerRemoteNote(sustainNote.mpId, sustainNote);
 
 						sustainNote.correctionOffset = swagNote.height / 2;
 						if (!PlayState.isPixelStage)
@@ -5317,8 +5285,6 @@ class PlayState extends MusicBeatState
 	#if LUA_ALLOWED
 	public function startLuasNamed(luaFile:String)
 	{
-		if (MpMatch.active)
-			return false;
 		#if MODS_ALLOWED
 		var luaToLoad:String = Paths.modFolders(luaFile);
 		if (!FileSystem.exists(luaToLoad))
@@ -5344,8 +5310,6 @@ class PlayState extends MusicBeatState
 	#if HSCRIPT_ALLOWED
 	public function startHScriptsNamed(scriptFile:String)
 	{
-		if (MpMatch.active)
-			return false;
 		#if MODS_ALLOWED
 		var scriptToLoad:String = Paths.modFolders(scriptFile);
 		if (!FileSystem.exists(scriptToLoad))
@@ -5364,8 +5328,6 @@ class PlayState extends MusicBeatState
 
 	public function initHScript(file:String)
 	{
-		if (MpMatch.active)
-			return;
 		var newScript:HScript = new HScript(file, this);
 		trace('initialized hscript interp successfully: $file');
 		hscriptGrp.add(newScript);
