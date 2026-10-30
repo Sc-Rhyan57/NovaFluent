@@ -9,6 +9,8 @@ class MpSocket
 	public var open:Bool = false;
 
 	var ws:Dynamic;
+	var outbox:Array<String> = [];
+	var closedSent:Bool = false;
 
 	public function new(url:String)
 	{
@@ -17,6 +19,10 @@ class MpSocket
 		ws.onopen = function()
 		{
 			open = true;
+			var pending:Array<String> = outbox;
+			outbox = [];
+			for (text in pending)
+				rawSend(text);
 			inbox.add({type: '_open'});
 		};
 
@@ -46,6 +52,9 @@ class MpSocket
 		ws.onclose = function(?e:Dynamic)
 		{
 			open = false;
+			if (closedSent)
+				return;
+			closedSent = true;
 			inbox.add({type: '_close'});
 		};
 	}
@@ -54,22 +63,65 @@ class MpSocket
 	{
 		if (ws == null)
 			return;
-		ws.send(Json.stringify(obj));
+		var text:String = Json.stringify(obj);
+		if (!open)
+		{
+			outbox.push(text);
+			return;
+		}
+		rawSend(text);
+	}
+
+	function rawSend(text:String):Void
+	{
+		if (ws == null)
+			return;
+		try
+		{
+			ws.send(text);
+		}
+		catch (e:Dynamic)
+		{
+			inbox.add({type: '_error', message: Std.string(e)});
+		}
 	}
 
 	public function pump():Void
 	{
+		if (ws == null)
+			return;
 		var fn:Dynamic = Reflect.field(ws, 'process');
-		if (fn != null)
+		if (fn == null)
+			return;
+		try
+		{
 			Reflect.callMethod(ws, fn, []);
+		}
+		catch (e:Dynamic)
+		{
+			inbox.add({type: '_error', message: Std.string(e)});
+		}
 	}
 
 	public function close():Void
 	{
 		open = false;
-		var fn:Dynamic = Reflect.field(ws, 'close');
-		if (fn != null)
-			Reflect.callMethod(ws, fn, []);
+		outbox = [];
+		closedSent = true;
+		var target:Dynamic = ws;
 		ws = null;
+		if (target == null)
+			return;
+		var fn:Dynamic = Reflect.field(target, 'close');
+		if (fn != null)
+		{
+			try
+			{
+				Reflect.callMethod(target, fn, []);
+			}
+			catch (e:Dynamic)
+			{
+			}
+		}
 	}
 }
