@@ -3678,7 +3678,11 @@ class PlayState extends MusicBeatState
                 if (!startedCountdown || Conductor.songPosition < nflogNextAt)
                         return;
                 nflogNextAt = Conductor.songPosition + 2000;
-                general.backend.NFLog.info('song', 'posição ' + Std.int(Conductor.songPosition / 1000) + 's em ' + SONG.song + ' notas=' + notes.length);
+                var mem:String = '';
+                #if cpp
+                try mem = ' mem=' + Std.int(cpp.vm.Gc.memInfo64(2) / 1048576) + 'MB' catch (_:Dynamic) {}
+                #end
+                general.backend.NFLog.info('song', 'posição ' + Std.int(Conductor.songPosition / 1000) + 's em ' + SONG.song + ' notas=' + notes.length + mem);
         }
 
         public function endSong()
