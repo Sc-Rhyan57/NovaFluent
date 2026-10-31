@@ -155,7 +155,10 @@ class OnlineModsState extends MusicBeatState
 				setCover(ev.index, ev.path);
 
 			case 'phase':
-				setProgress(ev.progress, ev.text + '  ' + Math.round(ev.progress * 100) + '%');
+				if (ev.progress < 0)
+					setProgress(0, ev.text);
+				else
+					setProgress(ev.progress, ev.text + '  ' + Math.round(ev.progress * 100) + '%');
 
 			case 'done':
 				busy = false;

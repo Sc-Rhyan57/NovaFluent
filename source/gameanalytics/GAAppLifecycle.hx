@@ -70,6 +70,7 @@ class GAAppLifecycle
 
 	static function onExit(_exitCode:Int):Void
 	{
+		general.backend.NFLog.closeClean();
 		GABridge.flush();
 	}
 

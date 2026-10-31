@@ -134,7 +134,7 @@ class OnlineMods
 		return result;
 	}
 
-	public static function fetchBytesProgress(url:String, expected:Float, onProgress:Int->Void):Bytes
+	public static function fetchBytesProgress(url:String, onProgress:Int->Void):Bytes
 	{
 		var buf:BytesBuffer = new BytesBuffer();
 		var offset:Int = 0;
@@ -165,14 +165,13 @@ class OnlineMods
 
 			if (status == 200)
 			{
-				onProgress(100);
+				onProgress(got.length);
 				return got;
 			}
 
 			buf.addBytes(got, 0, got.length);
 			offset += got.length;
-			if (expected > 0)
-				onProgress(Std.int(Math.min(100, offset * 100 / expected)));
+			onProgress(offset);
 			if (got.length < chunk)
 				break;
 		}
@@ -205,14 +204,23 @@ class OnlineMods
 
 	public static function install(mod:OnlineMod, onPhase:String->Float->Void):Void
 	{
-		onPhase('Baixando', 0);
-		var bytes:Bytes = fetchBytesProgress(mod.download, mod.size, function(p:Int) onPhase('Baixando', p / 100));
+		onPhase('Baixando', mod.size > 0 ? 0 : -1);
+		var bytes:Bytes = fetchBytesProgress(mod.download, function(got:Int)
+		{
+			var progress:Float = mod.size > 0 ? Math.min(1, got / mod.size) : -1;
+			onPhase('Baixando ' + megabytes(got), progress);
+		});
 
 		onPhase('Verificando', 1);
 		verify(bytes, mod.sha256);
 
 		onPhase('Extraindo', 1);
 		extract(bytes, mod.folder);
+	}
+
+	static function megabytes(n:Int):String
+	{
+		return Std.string(Math.round(n / 104857.6) / 10) + ' MB';
 	}
 
 	static function verify(bytes:Bytes, expected:String):Void
@@ -229,7 +237,8 @@ class OnlineMods
 	{
 		var entries:List<Entry> = new Reader(new BytesInput(bytes)).read();
 		var list:Array<Entry> = [for (e in entries) e];
-		var prefix:String = commonRoot(list);
+		var layout:String = modsLayout(list);
+		var prefix:String = layout == null ? commonRoot(list) : layout;
 		var dest:String = Paths.mods(folder);
 
 		mkdirs(dest);
@@ -239,6 +248,8 @@ class OnlineMods
 			var name:String = e.fileName.split('\\').join('/');
 			if (prefix != '' && StringTools.startsWith(name, prefix))
 				name = name.substr(prefix.length);
+			else if (layout != null)
+				continue;
 			if (name == '')
 				continue;
 
@@ -256,6 +267,27 @@ class OnlineMods
 			mkdirs(Path.directory(target));
 			File.saveBytes(target, e.data);
 		}
+	}
+
+	/** Finds `[pasta/]mods/<nome>/` inside the zip, so repos laid out as `mods/<nome>/...` install correctly. */
+	static function modsLayout(list:Array<Entry>):String
+	{
+		for (e in list)
+		{
+			var name:String = e.fileName.split('\\').join('/');
+			var at:Int = name.indexOf('mods/');
+			if (at == -1)
+				continue;
+			var before:String = name.substr(0, at);
+			if (before != '' && (before.split('/').length != 2 || before.charAt(before.length - 1) != '/'))
+				continue;
+			var rest:String = name.substr(at + 5);
+			var slash:Int = rest.indexOf('/');
+			if (slash <= 0)
+				continue;
+			return name.substr(0, at + 5 + slash + 1);
+		}
+		return null;
 	}
 
 	static function commonRoot(list:Array<Entry>):String

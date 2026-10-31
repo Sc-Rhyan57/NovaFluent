@@ -20,6 +20,8 @@ class NFLog
 	static var sessionPath:String = null;
 	static var recent:Array<String> = [];
 	static var lastNative:Float = 0;
+	static var lockPath:String = null;
+	static var previousCrash:String = null;
 
 	public static function init(commit:String):Void
 	{
@@ -32,6 +34,10 @@ class NFLog
 				FileSystem.createDirectory(dir);
 			prune(dir);
 			sessionPath = Path.join([dir, 'session-' + stamp(true).split(':').join('') + '.log']);
+			lockPath = Path.join([dir, 'running.lock']);
+			if (FileSystem.exists(lockPath))
+				previousCrash = summarizePrevious(dir, lockPath);
+			File.saveContent(lockPath, sessionPath);
 			out = File.append(sessionPath, false);
 			ready = true;
 		}
@@ -120,6 +126,83 @@ class NFLog
 		lock.release();
 		general.backend.NativeCrashHandler.setHaxeRuntimeSnapshot('[nflog]\n' + text);
 		#end
+	}
+
+	public static function takePreviousCrash():String
+	{
+		var text:String = previousCrash;
+		previousCrash = null;
+		return text;
+	}
+
+	public static function closeClean():Void
+	{
+		write('INFO', 'shutdown', 'encerramento normal');
+		try
+		{
+			if (lockPath != null && FileSystem.exists(lockPath))
+				FileSystem.deleteFile(lockPath);
+		}
+		catch (_:Dynamic) {}
+	}
+
+	static function summarizePrevious(dir:String, lockFile:String):String
+	{
+		var previous:String = '?';
+		var lines:Array<String> = [];
+		try
+		{
+			previous = StringTools.trim(File.getContent(lockFile));
+			lines = File.getContent(previous).split('\n');
+		}
+		catch (_:Dynamic) {}
+
+		var problems:Array<String> = [];
+		for (l in lines)
+			if (l.indexOf(' ERROR ') != -1 || l.indexOf(' WARN ') != -1)
+				problems.push(l);
+		var recentProblems:Array<String> = problems.slice(Std.int(Math.max(0, problems.length - 12)));
+		var recentLines:Array<String> = lines.slice(Std.int(Math.max(0, lines.length - 25)));
+		var reportPath:String = newestCrashReport(dir);
+
+		var text:String = 'A sessão anterior não foi encerrada normalmente.\n'
+			+ 'Log: ' + previous + '\n'
+			+ 'Relatório nativo: ' + (reportPath == null ? 'nenhum salvo' : reportPath) + '\n\n'
+			+ '== Erros e avisos da sessão ==\n' + recentProblems.join('\n') + '\n\n'
+			+ '== Últimas ações antes da queda ==\n' + recentLines.join('\n') + '\n';
+		try
+			File.saveContent(Path.join([dir, 'ultimo-crash.txt']), text)
+		catch (_:Dynamic) {}
+		return text;
+	}
+
+	static function newestCrashReport(dir:String):String
+	{
+		var best:String = null;
+		var bestTime:Float = -1;
+		try
+		{
+			var roots:Array<String> = [Path.directory(dir), Sys.getCwd()];
+			for (root in roots)
+				for (sub in ['crash', 'haxe-crash'])
+				{
+					var folder:String = Path.join([root, sub]);
+					if (!FileSystem.exists(folder) || !FileSystem.isDirectory(folder))
+						continue;
+					for (n in FileSystem.readDirectory(folder))
+					{
+						var p:String = Path.join([folder, n]);
+						var t:Float = FileSystem.stat(p).mtime.getTime();
+						if (t > bestTime)
+						{
+							bestTime = t;
+							best = p;
+						}
+					}
+				}
+		}
+		catch (_:Dynamic) {}
+		return best;
 	}
 
 	static function directory():String

@@ -103,6 +103,11 @@ class MainMenuState extends MusicBeatState
 
 	override function create()
 	{
+		#if sys
+		var previousCrash:String = general.backend.NFLog.takePreviousCrash();
+		if (previousCrash != null)
+			try mobile.backend.SUtil.showPopUp(previousCrash.length > 900 ? previousCrash.substr(0, 900) + '\n... (completo em logs/ultimo-crash.txt)' : previousCrash, 'NovaFlare - Diagnóstico') catch (_:Dynamic) {}
+		#end
 		Paths.clearStoredMemory();
 		Paths.clearUnusedMemory();
 
