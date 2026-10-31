@@ -27,7 +27,7 @@ class NFLog
 			if (!FileSystem.exists(dir))
 				FileSystem.createDirectory(dir);
 			prune(dir);
-			sessionPath = Path.join([dir, 'session-' + Date.now().format('%Y%m%d-%H%M%S') + '.log']);
+			sessionPath = Path.join([dir, 'session-' + stamp(true).split(':').join('') + '.log']);
 			out = File.append(sessionPath, false);
 			ready = true;
 		}
@@ -82,7 +82,7 @@ class NFLog
 
 	public static function write(level:String, tag:String, msg:String):Void
 	{
-		var line:String = '[' + Date.now().format('%H:%M:%S') + '] ' + level + ' ' + tag + ' ' + msg;
+		var line:String = '[' + stamp(false) + '] ' + level + ' ' + tag + ' ' + msg;
 		try
 		{
 			Sys.println(line);
@@ -128,6 +128,20 @@ class NFLog
 				names.shift();
 			}
 		}
+	}
+
+	static function pad(n:Int):String
+	{
+		return n < 10 ? '0' + n : '' + n;
+	}
+
+	static function stamp(full:Bool):String
+	{
+		var d:Date = Date.now();
+		var time:String = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+		if (!full)
+			return time;
+		return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + time;
 	}
 
 	static function safe(f:Void->String):String
