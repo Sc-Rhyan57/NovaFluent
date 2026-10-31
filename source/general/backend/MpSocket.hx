@@ -9,6 +9,7 @@ class MpSocket
 {
 	static final PING_EVERY:Float = 20;
 	static final TIMEOUT_AFTER:Float = 45;
+	static final BLOCKED_RETRY:Float = 0.05;
 
 	public static var current:MpSocket = null;
 	static var hooked:Bool = false;
@@ -19,6 +20,7 @@ class MpSocket
 
 	var ws:Dynamic;
 	var outbox:Array<String> = [];
+	var backlog:Array<{text:String, at:Float}> = [];
 	var closedSent:Bool = false;
 	var lastPing:Float = 0;
 	var lastSeen:Float = 0;
@@ -44,7 +46,7 @@ class MpSocket
 			var pending:Array<String> = outbox;
 			outbox = [];
 			for (text in pending)
-				rawSend(text);
+				enqueue(text);
 			inbox.add({type: '_open'});
 		};
 
@@ -74,6 +76,11 @@ class MpSocket
 
 		ws.onerror = function(e:Dynamic)
 		{
+			if (isBlocked(e))
+			{
+				NFLog.warn('net', 'buffer de envio cheio (Blocked), a sala continua');
+				return;
+			}
 			NFLog.warn('net', 'erro no websocket: ' + Std.string(e));
 			inbox.add({type: '_error', message: Std.string(e)});
 		};
@@ -102,7 +109,47 @@ class MpSocket
 			outbox.push(text);
 			return;
 		}
+		enqueue(text);
+	}
+
+	function enqueue(text:String):Void
+	{
+		if (backlog.length > 0)
+		{
+			backlog.push({text: text, at: 0});
+			return;
+		}
 		rawSend(text);
+	}
+
+	static function isBlocked(e:Dynamic):Bool
+	{
+		return Std.string(e).indexOf('Blocked') != -1;
+	}
+
+	function flushBacklog():Void
+	{
+		if (!open || ws == null || backlog.length == 0)
+			return;
+		if (backlog[0].at > Timer.stamp())
+			return;
+		var item = backlog[0];
+		try
+		{
+			ws.send(item.text);
+			backlog.shift();
+		}
+		catch (e:Dynamic)
+		{
+			if (isBlocked(e))
+			{
+				item.at = Timer.stamp() + BLOCKED_RETRY;
+				return;
+			}
+			backlog.shift();
+			NFLog.warn('net', 'falha ao reenviar: ' + Std.string(e));
+			inbox.add({type: '_error', message: Std.string(e)});
+		}
 	}
 
 	function rawSend(text:String):Void
@@ -115,6 +162,11 @@ class MpSocket
 		}
 		catch (e:Dynamic)
 		{
+			if (isBlocked(e))
+			{
+				backlog.push({text: text, at: Timer.stamp() + BLOCKED_RETRY});
+				return;
+			}
 			NFLog.warn('net', 'falha ao enviar: ' + Std.string(e));
 			inbox.add({type: '_error', message: Std.string(e)});
 		}
@@ -149,6 +201,7 @@ class MpSocket
 		try
 		{
 			s.pump();
+			s.flushBacklog();
 			s.heartbeat();
 		}
 		catch (e:Dynamic)
@@ -208,6 +261,7 @@ class MpSocket
 			current = null;
 		open = false;
 		outbox = [];
+		backlog = [];
 		closedSent = true;
 		var target:Dynamic = ws;
 		ws = null;

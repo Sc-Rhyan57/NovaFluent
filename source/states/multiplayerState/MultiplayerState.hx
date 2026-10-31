@@ -143,7 +143,7 @@ class MultiplayerState extends MusicBeatState
         var chunkQueue:Array<{to:String, index:Int, total:Int}> = [];
         // Pedaços enviados e ainda não confirmados (modAck), por destinatário.
         var inFlight:Map<String, Int> = new Map();
-        static final CHUNK_WINDOW:Int = 4;
+        static final CHUNK_WINDOW:Int = 2;
         var incomingQueue:Deque<Dynamic> = null;
         var incomingIndex:Int = 0;
 

@@ -164,6 +164,12 @@ class NFLog
 		var recentProblems:Array<String> = problems.slice(Std.int(Math.max(0, problems.length - 12)));
 		var recentLines:Array<String> = lines.slice(Std.int(Math.max(0, lines.length - 25)));
 		var reportPath:String = newestCrashReport(dir);
+		try
+		{
+			if (reportPath != null && FileSystem.stat(reportPath).mtime.getTime() < FileSystem.stat(lockFile).mtime.getTime())
+				reportPath = null;
+		}
+		catch (_:Dynamic) {}
 
 		var text:String = 'A sessão anterior não foi encerrada normalmente.\n'
 			+ 'Log: ' + previous + '\n'

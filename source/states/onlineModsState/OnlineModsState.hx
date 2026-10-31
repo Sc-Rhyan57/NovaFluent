@@ -136,9 +136,12 @@ class OnlineModsState extends MusicBeatState
 		switch (ev.kind)
 		{
 			case 'list':
-				if (ev.error != null)
+				if (ev.error != null || ev.mods == null)
 				{
-					status.text = 'Erro: ' + ev.error;
+					general.backend.NFLog.warn('mods', 'lista online indisponível: ' + ev.error);
+					mods = [];
+					buildRows();
+					status.text = 'Não há mods online ou erro com a conexão.';
 					return;
 				}
 				mods = ev.mods;

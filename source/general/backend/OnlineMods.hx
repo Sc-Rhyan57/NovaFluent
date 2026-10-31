@@ -68,9 +68,16 @@ class OnlineMods
 				return;
 			}
 
+			var clean:String = StringTools.trim(body.split(String.fromCharCode(0)).join(''));
+			if (clean.length == 0 || (clean.charAt(0) != '{' && clean.charAt(0) != '['))
+			{
+				onDone(null, 'resposta não é uma lista de mods (início: ' + visibleHead(body) + ')');
+				return;
+			}
+
 			try
 			{
-				onDone(parseList(body), null);
+				onDone(parseList(clean), null);
 			}
 			catch (e:Dynamic)
 			{
@@ -307,6 +314,18 @@ class OnlineMods
 				return '';
 		}
 		return root == null ? '' : root;
+	}
+
+	static function visibleHead(text:String):String
+	{
+		var head:String = text.substr(0, 24);
+		var out:String = '';
+		for (i in 0...head.length)
+		{
+			var c:Int = head.charCodeAt(i);
+			out += c == 0 ? '\\0' : (c < 32 ? '?' : head.charAt(i));
+		}
+		return out;
 	}
 
 	static function mkdirs(dir:String):Void
