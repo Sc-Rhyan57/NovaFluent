@@ -890,16 +890,16 @@ class PlayState extends MusicBeatState
                 if (MpMatch.active)
                         for (scriptPath in MpMatch.scriptPaths)
                         {
-                            NFLog.info('lua', 'abrindo ' + scriptPath);
+                            general.backend.NFLog.info('lua', 'abrindo ' + scriptPath);
                             try
                             {
                                 new FunkinLua(scriptPath);
                             }
                             catch (e:Dynamic)
                             {
-                                NFLog.error('lua', 'falha ao carregar ' + scriptPath + ': ' + Std.string(e));
+                                general.backend.NFLog.error('lua', 'falha ao carregar ' + scriptPath + ': ' + Std.string(e));
                             }
-                            NFLog.info('lua', 'carregado ' + scriptPath);
+                            general.backend.NFLog.info('lua', 'carregado ' + scriptPath);
                         }
                 #end
                 hscriptGrp.execute();
