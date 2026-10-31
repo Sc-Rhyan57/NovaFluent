@@ -17,6 +17,7 @@ import general.backend.MpButton;
 import general.backend.MpMatch;
 import general.backend.MpMatch.PendingSong;
 import general.backend.MpModTransfer;
+import general.backend.MpModTransfer.ModPlan;
 import general.backend.MpScripts;
 import general.backend.MpSocket;
 import general.backend.MusicBeatState;
@@ -90,6 +91,13 @@ class MultiplayerState extends MusicBeatState
         var botButton:MpButton;
         var speedButton:MpButton;
         var modButton:MpButton;
+        var songPickButton:MpButton;
+        var createSongs:Array<String> = [];
+        var createSongIdx:Int = 0;
+        var requestButton:MpButton;
+        var requested:Bool = false;
+        var sentTo:Map<String, Int> = new Map();
+        var sendTotalTo:Map<String, Int> = new Map();
         var availableMods:Array<String> = ['_base'];
         var modIndex:Int = 0;
         var dieOnMiss:Bool = true;
@@ -122,15 +130,15 @@ class MultiplayerState extends MusicBeatState
         var songsList:Array<String> = [];
         var songIdx:Int = 0;
 
-        var hostPayload:String = null;
+        var hostPlan:ModPlan = null;
         var encoding:Bool = false;
         var pendingSend:Array<String> = [];
         var chunkQueue:Array<{to:String, index:Int, total:Int}> = [];
         // Pedaços enviados e ainda não confirmados (modAck), por destinatário.
         var inFlight:Map<String, Int> = new Map();
         static final CHUNK_WINDOW:Int = 4;
-        var incoming:Array<String> = null;
-        var incomingCount:Int = 0;
+        var incomingQueue:Deque<Dynamic> = null;
+        var incomingIndex:Int = 0;
 
         var pendingStart:Bool = false;
         var startAt:Float = 0;
@@ -239,7 +247,10 @@ class MultiplayerState extends MusicBeatState
                         applySlots();
                 }
                 if (m == 'create')
+                {
+                        refreshCreateSongs();
                         refreshCreateLabels();
+                }
                 if (m == 'room')
                         refreshRoomUI();
         }
@@ -296,6 +307,7 @@ class MultiplayerState extends MusicBeatState
                 nameInput = input('create', PX + 30, 208, 500, false);
                 muted('create', PX + 30, 262, 500, 'SENHA DA SALA (6 dígitos, opcional)', 14);
                 createPassInput = input('create', PX + 30, 284, 300, false);
+                songPickButton = button('create', PX + 560, 208, 410, 44, '', B_NEUTRAL, cycleCreateSong);
 
                 dieButton = button('create', PX + 30, 360, 300, 48, '', B_NEUTRAL, toggleDie);
                 botButton = button('create', PX + 350, 360, 300, 48, '', B_NEUTRAL, toggleBot);
@@ -338,6 +350,7 @@ class MultiplayerState extends MusicBeatState
                 readyButton = button('room', PX, 580, 230, 56, 'PRONTO', B_PRIMARY, toggleReady);
                 playButton = button('room', PX + 250, 580, 230, 56, 'PLAY', B_SECOND, startMatch);
                 button('room', PX + 500, 580, 260, 56, 'SAIR DA SALA', B_DANGER, leaveRoom);
+                requestButton = button('room', PX + 780, 580, 260, 56, 'BAIXAR MOD', B_SECOND, requestMod);
         }
 
         override function update(elapsed:Float):Void
@@ -416,20 +429,6 @@ class MultiplayerState extends MusicBeatState
                         return;
                 menuMusicOn = true;
                 FlxG.sound.playMusic(Paths.music('freakyMenu'), 0.7);
-        }
-
-        function queueMissingMods():Void
-        {
-                if (!isHost || room == null || roomFolder == null || roomFolder == BASE_FOLDER)
-                        return;
-                for (m in cast(room.members, Array<Dynamic>))
-                {
-                        var to:String = Std.string(m.username);
-                        if (to != MpApi.username && pendingSend.indexOf(to) == -1)
-                                pendingSend.push(to);
-                }
-                if (pendingSend.length > 0)
-                        ensurePayload();
         }
 
         function setProgress(p:Float, text:String):Void
@@ -581,6 +580,29 @@ class MultiplayerState extends MusicBeatState
                 if (availableMods.length == 0)
                         return;
                 modIndex = (modIndex + 1) % availableMods.length;
+                refreshCreateSongs();
+                refreshCreateLabels();
+        }
+
+        function refreshCreateSongs():Void
+        {
+                var folder:String = createFolder();
+                createSongs = folder == null ? [] : songsOfMod(folder == BASE_FOLDER ? '' : folder);
+                createSongIdx = 0;
+                var p:PendingSong = MpMatch.pendingSong;
+                if (p != null)
+                {
+                        var idx:Int = createSongs.indexOf(p.name);
+                        if (idx != -1)
+                                createSongIdx = idx;
+                }
+        }
+
+        function cycleCreateSong():Void
+        {
+                if (createSongs.length == 0)
+                        return;
+                createSongIdx = (createSongIdx + 1) % createSongs.length;
                 refreshCreateLabels();
         }
 
@@ -604,11 +626,9 @@ class MultiplayerState extends MusicBeatState
 
         function refreshCreateLabels():Void
         {
-                var p:PendingSong = MpMatch.pendingSong;
-                if (p == null)
-                        createSongText.text = 'Abra o MULTI pelo Freeplay depois de escolher a música. A música escolhida no Freeplay será a primeira da partida.';
-                else
-                        createSongText.text = 'Música: ' + p.name + '  (dificuldade ' + p.difficulty + ')   ·   Mod: ' + createFolder();
+                var song:String = createSongs.length == 0 ? 'nenhuma' : createSongs[createSongIdx];
+                createSongText.text = 'Música: ' + song + '   ·   Mod: ' + createFolder();
+                songPickButton.setLabel(createSongs.length == 0 ? 'SEM MÚSICAS' : 'MÚSICA: ' + song + '  (' + (createSongIdx + 1) + '/' + createSongs.length + ')');
                 dieButton.setLabel('MORRER AO ERRAR: ' + yn(dieOnMiss));
                 botButton.setLabel('BOTPLAY: ' + yn(botplay));
                 speedButton.setLabel('VELOCIDADE: ' + NOTE_SPEEDS[speedIndex]);
@@ -618,13 +638,15 @@ class MultiplayerState extends MusicBeatState
 
         function submitCreate():Void
         {
-                var p:PendingSong = MpMatch.pendingSong;
                 var folder:String = createFolder();
-                if (p == null || folder == null)
+                if (folder == null || createSongs.length == 0)
                 {
-                        setStatus('Escolha uma música no Freeplay antes de criar o servidor.');
+                        setStatus('Escolha um mod com músicas antes de criar o servidor.');
                         return;
                 }
+                var songName:String = createSongs[createSongIdx];
+                var p:PendingSong = MpMatch.pendingSong;
+                var songDifficulty:Int = p != null && p.name == songName ? p.difficulty : 0;
 
                 var name:String = StringTools.trim(nameInput.text);
                 if (name == '')
@@ -641,6 +663,11 @@ class MultiplayerState extends MusicBeatState
                 }
 
                 var size:Float = folder == BASE_FOLDER ? 0 : MpModTransfer.folderSize(folder);
+                if (size > MpModTransfer.MAX_BYTES)
+                {
+                        setStatus('O mod tem ' + Std.int(size / 1048576) + ' MB; o limite do servidor é ' + Std.int(MpModTransfer.MAX_BYTES / 1048576) + ' MB.');
+                        return;
+                }
                 var payload:Dynamic = {
                         name: name,
                         mod: {name: folder, folder: folder, size: size},
@@ -649,13 +676,13 @@ class MultiplayerState extends MusicBeatState
                                 botplay: botplay,
                                 noteSpeed: NOTE_SPEEDS[speedIndex],
                                 password: pw == '' ? null : pw,
-                                song: {name: p.name, difficulty: p.difficulty}
+                                song: {name: songName, difficulty: songDifficulty}
                         }
                 };
 
                 pendingPassword = pw;
                 roomFolder = folder;
-                hostPayload = null;
+                hostPlan = null;
                 setStatus('Criando servidor...');
                 MpApi.createServer(payload, function(s:Int, j:Dynamic) events.add({kind: 'create', status: s, json: j}));
         }
@@ -694,11 +721,11 @@ class MultiplayerState extends MusicBeatState
                 return folder == BASE_FOLDER ? '' : folder;
         }
 
-        function scanSongs():Void
+        function songsOfMod(modDir:String):Array<String>
         {
-                songsList = [];
+                var out:Array<String> = [];
                 var previous:String = Mods.currentModDirectory;
-                Mods.currentModDirectory = roomModDirectory();
+                Mods.currentModDirectory = modDir;
                 try
                 {
                         WeekData.reloadWeekFiles(false);
@@ -710,8 +737,8 @@ class MultiplayerState extends MusicBeatState
                                 for (song in leWeek.songs)
                                 {
                                         var n:String = Std.string(song[0]);
-                                        if (n != '' && songsList.indexOf(n) == -1)
-                                                songsList.push(n);
+                                        if (n != '' && out.indexOf(n) == -1)
+                                                out.push(n);
                                 }
                         }
                 }
@@ -719,7 +746,40 @@ class MultiplayerState extends MusicBeatState
                 {
                 }
                 Mods.currentModDirectory = previous;
+                return out;
+        }
+
+        function scanSongs():Void
+        {
+                songsList = songsOfMod(roomModDirectory());
                 syncSongIndex();
+        }
+
+        function requestMod():Void
+        {
+                if (socket == null || room == null || isHost || modReady || requested)
+                        return;
+                requested = true;
+                socket.send({type: 'modRequest'});
+                setStatus('Pedido enviado. Aguardando o host enviar o mod...');
+                refreshRoomUI();
+        }
+
+        function updateSendProgress(to:String):Void
+        {
+                if (!sendTotalTo.exists(to))
+                        return;
+                var total:Int = sendTotalTo.get(to);
+                var done:Int = sentTo.exists(to) ? sentTo.get(to) : 0;
+                if (done >= total)
+                {
+                        setProgress(1, 'Mod entregue para ' + to + '.');
+                        setStatus('Mod entregue para ' + to + '.');
+                        return;
+                }
+                var text:String = 'Enviando o mod para ' + to + ': ' + Std.int(done * 100 / total) + '%   (' + done + '/' + total + ' pedaços)';
+                setProgress(done / total, text);
+                setStatus(text);
         }
 
         function syncSongIndex():Void
@@ -825,12 +885,14 @@ class MultiplayerState extends MusicBeatState
                 chatLines = [];
                 chatText.text = '';
                 roomFolder = r.mod.folder;
-                incoming = null;
-                incomingCount = 0;
-                hostPayload = null;
+                stopIncoming();
+                hostPlan = null;
                 pendingSend = [];
                 chunkQueue = [];
                 inFlight = new Map();
+                sentTo = new Map();
+                sendTotalTo = new Map();
+                requested = false;
                 modReady = isHost || roomFolder == BASE_FOLDER || FileSystem.exists(Paths.mods(roomFolder));
                 if (isHost)
                         scanSongs();
@@ -858,7 +920,6 @@ class MultiplayerState extends MusicBeatState
                         setStatus('Partida encerrada. ' + formatResults());
                 else
                         setStatus('Voltou para a sala.');
-                queueMissingMods();
         }
 
         function formatResults():String
@@ -897,6 +958,7 @@ class MultiplayerState extends MusicBeatState
                 readyButton.show(!isHost && modReady);
                 readyButton.setLabel(myReady ? 'CANCELAR' : 'PRONTO');
                 playButton.show(isHost);
+                requestButton.show(!isHost && !modReady && roomFolder != BASE_FOLDER && !requested);
         }
 
         function appendChat(line:String):Void
@@ -945,7 +1007,7 @@ class MultiplayerState extends MusicBeatState
                                         setStatus(errorOf(ev.json));
                                 }
 
-                        case 'payload':
+                        case 'plan':
                                 encoding = false;
                                 if (ev.error != null)
                                 {
@@ -953,8 +1015,16 @@ class MultiplayerState extends MusicBeatState
                                         setStatus('Falha ao preparar o mod: ' + ev.error);
                                         return;
                                 }
-                                hostPayload = ev.data;
+                                hostPlan = ev.data;
                                 flushPending();
+
+                        case 'modProgress':
+                                var progDone:Float = ev.done;
+                                var progTotal:Float = ev.total;
+                                var progPct:Int = progTotal > 0 ? Std.int(progDone * 100 / progTotal) : 0;
+                                var progText:String = 'Baixando o mod do host (' + ev.stage + ')   ' + progPct + '%   ·   ' + ev.files + '/' + ev.filesTotal + ' arquivos';
+                                setProgress(progTotal > 0 ? progDone / progTotal : 0, progText);
+                                setStatus(progText);
 
                         case 'modDone':
                                 if (ev.ok == true)
@@ -966,6 +1036,7 @@ class MultiplayerState extends MusicBeatState
                                 }
                                 else
                                 {
+                                        requested = false;
                                         setProgress(0, 'Falha ao instalar o mod.');
                                         setStatus('Falha ao instalar o mod: ' + ev.error);
                                 }
@@ -1020,9 +1091,14 @@ class MultiplayerState extends MusicBeatState
 
                         case 'playerJoined':
                                 appendChat('* ' + m.username + ' entrou');
-                                if (isHost && m.username != MpApi.username && roomFolder != BASE_FOLDER)
+
+                        case 'modRequest':
+                                if (isHost && roomFolder != BASE_FOLDER)
                                 {
-                                        pendingSend.push(m.username);
+                                        var requester:String = Std.string(m.from);
+                                        appendChat('* ' + requester + ' pediu o mod');
+                                        if (pendingSend.indexOf(requester) == -1)
+                                                pendingSend.push(requester);
                                         ensurePayload();
                                 }
 
@@ -1039,6 +1115,12 @@ class MultiplayerState extends MusicBeatState
                                 {
                                         var left:Int = inFlight.get(m.from) - 1;
                                         inFlight.set(m.from, left < 0 ? 0 : left);
+                                }
+                                if (isHost && m.index != null)
+                                {
+                                        var ackedBy:String = Std.string(m.from);
+                                        sentTo.set(ackedBy, (sentTo.exists(ackedBy) ? sentTo.get(ackedBy) : 0) + 1);
+                                        updateSendProgress(ackedBy);
                                 }
 
                         case 'chat':
@@ -1087,7 +1169,7 @@ class MultiplayerState extends MusicBeatState
 
         function ensurePayload():Void
         {
-                if (hostPayload != null)
+                if (hostPlan != null)
                 {
                         flushPending();
                         return;
@@ -1103,11 +1185,11 @@ class MultiplayerState extends MusicBeatState
                 {
                         try
                         {
-                                events.add({kind: 'payload', data: MpModTransfer.encode(folder)});
+                                events.add({kind: 'plan', data: MpModTransfer.plan(folder)});
                         }
                         catch (e:Dynamic)
                         {
-                                events.add({kind: 'payload', error: Std.string(e)});
+                                events.add({kind: 'plan', error: Std.string(e)});
                         }
                 });
         }
@@ -1122,22 +1204,26 @@ class MultiplayerState extends MusicBeatState
 
         function sendChunks(to:String):Void
         {
-                if (socket == null || hostPayload == null)
+                if (socket == null || hostPlan == null)
                         return;
+                for (c in chunkQueue)
+                        if (c.to == to)
+                                return;
 
-                var size:Int = MpModTransfer.CHUNK_CHARS;
-                var total:Int = Std.int(Math.max(1, Math.ceil(hostPayload.length / size)));
+                var total:Int = hostPlan.chunks;
+                sentTo.set(to, 0);
+                sendTotalTo.set(to, total);
                 for (i in 0...total)
                         chunkQueue.push({to: to, index: i, total: total});
-                setStatus('Enviando o mod para ' + to + ' (' + total + ' pedaços)...');
+                setProgress(0, 'Enviando o mod para ' + to + ' (' + hostPlan.files + ' arquivos)...');
+                setStatus('Enviando o mod para ' + to + ' (' + hostPlan.files + ' arquivos, ' + total + ' pedaços)...');
         }
 
         function pumpChunks():Void
         {
-                if (chunkQueue.length == 0 || socket == null || hostPayload == null)
+                if (chunkQueue.length == 0 || socket == null || hostPlan == null)
                         return;
 
-                var size:Int = MpModTransfer.CHUNK_CHARS;
                 // Um pedaço por frame, e só para quem ainda tem menos de CHUNK_WINDOW pedaços sem confirmação.
                 var i:Int = 0;
                 while (i < chunkQueue.length)
@@ -1156,62 +1242,52 @@ class MultiplayerState extends MusicBeatState
                                 to: c.to,
                                 index: c.index,
                                 total: c.total,
-                                data: hostPayload.substr(c.index * size, size)
+                                data: MpModTransfer.chunkBase64(hostPlan, c.index)
                         });
-                        if (c.index == c.total - 1)
-                        {
-                                setProgress(1, 'Mod enviado para ' + c.to + ' (' + c.total + ' pedaços)');
-                                setStatus('Mod enviado para ' + c.to + ' (' + c.total + ' pedaços).');
-                        }
                         return;
                 }
         }
 
         function receiveChunk(m:Dynamic):Void
         {
-                // Confirma o pedaço para o host liberar o próximo (controle de fluxo).
+                var index:Int = m.index;
+                var total:Int = m.total;
                 if (socket != null)
-                        socket.send({type: 'modAck', index: m.index});
+                        socket.send({type: 'modAck', index: index});
                 if (modReady || roomFolder == null)
                         return;
 
-                var total:Int = m.total;
-                var idx:Int = m.index;
-                if (incoming == null || incoming.length != total)
-                {
-                        incoming = [for (i in 0...total) (null : String)];
-                        incomingCount = 0;
-                }
+                if (index == 0)
+                        startIncoming();
+                else if (incomingQueue == null)
+                        return;
+                if (index != incomingIndex)
+                        return;
 
-                if (incoming[idx] == null)
-                        incomingCount++;
-                incoming[idx] = m.data;
+                incomingIndex++;
+                incomingQueue.add({index: index, total: total, data: m.data});
+                if (index == total - 1)
+                        incomingQueue = null;
+        }
 
-                var pct:Int = Std.int(incomingCount * 100 / total);
-                setProgress(incomingCount / total, 'Baixando o mod do host: ' + pct + '%   (' + incomingCount + '/' + total + ' pedaços)');
-                setStatus('Recebendo o mod: ' + pct + '%');
+        function startIncoming():Void
+        {
+                stopIncoming();
+                var queue:Deque<Dynamic> = new Deque();
+                var folder:String = roomFolder;
+                incomingQueue = queue;
+                incomingIndex = 0;
+                setProgress(0, 'Recebendo a estrutura do mod...');
+                setStatus('Recebendo o mod do host...');
+                Thread.create(() -> MpModTransfer.receive(queue, events, folder));
+        }
 
-                if (incomingCount == total)
-                {
-                        var joined:String = incoming.join('');
-                        var folder:String = roomFolder;
-                        incoming = null;
-                        incomingCount = 0;
-                        setProgress(1, 'Instalando o mod...');
-                        setStatus('Instalando o mod...');
-                        Thread.create(() ->
-                        {
-                                try
-                                {
-                                        MpModTransfer.decodeInto(joined, folder);
-                                        events.add({kind: 'modDone', ok: true});
-                                }
-                                catch (e:Dynamic)
-                                {
-                                        events.add({kind: 'modDone', ok: false, error: Std.string(e)});
-                                }
-                        });
-                }
+        function stopIncoming():Void
+        {
+                if (incomingQueue != null)
+                        incomingQueue.add(null);
+                incomingQueue = null;
+                incomingIndex = 0;
         }
 
         function launchMatch():Void

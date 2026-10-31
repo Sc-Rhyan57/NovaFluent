@@ -1013,6 +1013,8 @@ class PlayState extends MusicBeatState
                 newText.text = StringTools.replace(text, "/storage/emulated/0/.NovaFlare Engine/", ""); // delete stupid path
                 #end
                 newText.color = color;
+                if (color == FlxColor.RED && MpMatch.active)
+                        MpMatch.reportError(text);
                 newText.disableTime = 6;
                 newText.alpha = 1;
                 newText.setPosition(10, 8 - newText.height);
@@ -2505,7 +2507,7 @@ class PlayState extends MusicBeatState
         var mpAllLoaded:Bool = false;
         var mpLoadedPlayers:Map<String, Bool> = new Map<String, Bool>();
         var mpSentLoaded:Bool = false;
-        var remoteJudgements:Map<String, String> = new Map<String, String>();
+        var remoteJudgements:Map<String, Dynamic> = new Map<String, Dynamic>();
 
         override function handleInput(elapsed:Float)
         {
@@ -2576,7 +2578,7 @@ class PlayState extends MusicBeatState
                                                 var nid:String = '';
                                                 try { nid = msg.noteId != null ? Std.string(msg.noteId) : ''; } catch(e:Dynamic) {}
                                                 if (nid != '' && msg.judgement != null)
-                                                        remoteJudgements.set(nid, Std.string(msg.judgement));
+                                                        remoteJudgements.set(nid, {judgement: Std.string(msg.judgement), mustHit: msg.mustHit == true, gf: msg.gf == true});
                                                 deferred.push(msg);
                                         }
                                         else
@@ -2618,8 +2620,10 @@ class PlayState extends MusicBeatState
                                 var remoteNote:Note = MpMatch.remoteNotes.get(remoteId);
                                 if (remoteNote != null && !remoteNote.wasGoodHit)
                                 {
-                                        var judgement:String = remoteJudgements.get(remoteId);
-                                        try { applyRemoteJudge(remoteNote, judgement); } catch(e:Dynamic) {}
+                                        var info:Dynamic = remoteJudgements.get(remoteId);
+                                        if (info == null)
+                                                info = {judgement: 'hit', mustHit: remoteNote.mustPress, gf: remoteNote.gfNote};
+                                        try { applyRemoteJudge(remoteNote, info); } catch(e:Dynamic) {}
                                 }
                         }
                 }
@@ -5107,19 +5111,18 @@ class PlayState extends MusicBeatState
         //   Non-host plays mustHitSection=false sections (dad) -> their hits
         //   animate dad on their screen, and the judge broadcast makes the host's
         //   screen also animate dad.
-        function applyRemoteJudge(note:Note, judgement:String):Void
+        function applyRemoteJudge(note:Note, info:Dynamic):Void
         {
                 if (note == null)
                         return;
                 note.wasGoodHit = true;
                 note.visible = true;
 
-                // Determine which character to animate based on the note's section.
-                // The remote player is controlling this note, so we replicate their
-                // character's animation on our screen.
-                var isMustHitSide:Bool = note.mustPress; // true = boyfriend's side
+                var judgement:String = info.judgement;
+                var isMustHitSide:Bool = info.mustHit == true;
+                var isGf:Bool = info.gf == true;
                 var char:Character = isMustHitSide ? boyfriend : dad;
-                if (note.gfNote)
+                if (isGf)
                         char = gf;
 
                 if (judgement == 'miss')

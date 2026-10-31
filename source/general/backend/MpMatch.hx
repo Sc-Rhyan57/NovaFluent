@@ -7,6 +7,7 @@ import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.text.FlxText;
 import flixel.util.FlxColor;
+import games.backend.Song;
 import games.objects.Note;
 
 typedef PendingSong =
@@ -41,7 +42,10 @@ class MpMatch
 	public static var aborted:Bool = false;
 	public static var abortReason:String = '';
 	public static var pendingStatus:String = null;
+	public static var notices:Array<String> = [];
 
+	static var lastNoticeText:String = '';
+	static var lastNoticeAt:Float = 0;
 	static var chartEntries:Array<Dynamic> = [];
 	static var chartPool:Map<String, Array<String>> = new Map();
 	static var remoteHits:Array<String> = [];
@@ -108,18 +112,24 @@ class MpMatch
 		var sections:Array<Dynamic> = cast song.notes;
 		if (sections == null)
 			return out;
+		var isPe104:Bool = Song.chartEngineVersion == 'Pe-1.0.4';
 
 		for (section in sections)
 		{
 			if (section == null || section.sectionNotes == null)
 				continue;
+			var secMust:Bool = section.mustHitSection == true;
+			var secGf:Bool = section.gfSection == true;
 			var notes:Array<Dynamic> = cast section.sectionNotes;
 			for (n in notes)
 			{
 				var time:Float = n[0];
-				var lane:Int = Std.int(n[1]) % keys;
+				var raw:Int = Std.int(n[1]);
+				var lane:Int = raw % keys;
 				var type:String = typeOf(n[3]);
-				out.push({time: Std.int(time), lane: lane, type: type});
+				var gottaHit:Bool = isPe104 ? raw < keys : (raw > mania ? !secMust : secMust);
+				var gf:Bool = isPe104 ? (secGf && gottaHit == secMust) : (secGf && raw < keys);
+				out.push({time: Std.int(time), lane: lane, type: type, mustHit: gottaHit, gf: gf});
 
 				if (!isSustain(n[2]))
 					continue;
@@ -128,7 +138,7 @@ class MpMatch
 				if (floorSus > 0)
 				{
 					for (susNote in 0...floorSus + 1)
-						out.push({time: Std.int(time + (stepCrochet * susNote)), lane: lane, type: 'sustain'});
+						out.push({time: Std.int(time + (stepCrochet * susNote)), lane: lane, type: 'sustain', mustHit: gottaHit, gf: gf});
 				}
 			}
 		}
@@ -175,8 +185,26 @@ class MpMatch
 		stats = new Map();
 		remoteHits = [];
 		remoteNotes = new Map();
+		notices = [];
 		buildPool();
 		refreshHud();
+	}
+
+	public static function reportError(text:String):Void
+	{
+		if (!active || socket == null || text == null)
+			return;
+		var clean:String = StringTools.trim(text);
+		if (clean == '')
+			return;
+		if (clean.length > 200)
+			clean = clean.substr(0, 200);
+		var now:Float = haxe.Timer.stamp();
+		if (now - lastNoticeAt < 0.25 || (clean == lastNoticeText && now - lastNoticeAt < 2))
+			return;
+		lastNoticeText = clean;
+		lastNoticeAt = now;
+		socket.send({type: 'notice', text: clean});
 	}
 
 	public static function registerRemoteNote(id:String, note:Note):Void
@@ -324,6 +352,7 @@ class MpMatch
 		stats = new Map();
 		remoteHits = [];
 		remoteNotes = new Map();
+		notices = [];
 		scriptPaths = [];
 		chartEntries = [];
 		chartPool = new Map();
@@ -359,7 +388,10 @@ class MpMatch
 			var mark:String = Reflect.field(st, 'dead') == true ? ' [MORTO]' : '';
 			parts.push(name + ': ' + Reflect.field(st, 'score') + ' (' + acc + '%)' + mark);
 		}
-		hud.text = parts.join('   |   ');
+		var lines:Array<String> = [parts.join('   |   ')];
+		for (n in notices)
+			lines.push('! ' + n);
+		hud.text = lines.join('\n');
 	}
 
 	static function abortWith(reason:String):Void
@@ -386,6 +418,12 @@ class MpMatch
 			case 'dead':
 				if (m.username == localName)
 					dead = true;
+				refreshHud();
+
+			case 'notice':
+				notices.push(Std.string(m.from) + ': ' + Std.string(m.text));
+				while (notices.length > 3)
+					notices.shift();
 				refreshHud();
 
 			case 'paused':
