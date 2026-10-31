@@ -84,32 +84,42 @@ jobs:
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore Android libs from release
+      - name: Restore Android haxelibs cache
+        id: android_libs
         if: steps.android_cache.outputs.skip_cache == 'false'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          rm -rf /tmp/android-parts && mkdir -p /tmp/android-parts
-          if gh release download libs-cache -p 'android-libs.tar.gz.part-*' -D /tmp/android-parts --clobber 2>/dev/null; then
-            if cat /tmp/android-parts/android-libs.tar.gz.part-* | tar -xzf -; then
-              echo "Libs restauradas da release."
-            else
-              echo "Falha ao descompactar, seguindo sem cache."
-              rm -rf .haxelib
-            fi
-          else
-            echo "Nenhum cache na release, seguindo sem ele."
-          fi
+        uses: actions/cache@v4
+        with:
+          path: |
+            .haxelib
+            ~/haxelib
+          key: haxelib-android-${{ hashFiles('hmm.json') }}-${{ github.run_id }}
+          restore-keys: |
+            haxelib-android-${{ hashFiles('hmm.json') }}-
+
+      - name: Restore Android native build cache
+        id: android_native
+        if: steps.android_cache.outputs.skip_cache == 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            export/release/android/obj
+            export/release/android/bin/app/build/intermediates/cxx
+          key: native-android-${{ hashFiles('Project.xml', 'hmm.json', 'source/**') }}-${{ github.run_id }}
+          restore-keys: |
+            native-android-
 
       - name: Install Android Libraries
         run: |
           haxelib setup ~/haxelib
-          haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
-          haxelib --global run hmm install
-          for library in polymod thx.core thx.semver FlxPartialSound; do
-            haxelib --global run hmm reinstall --force "$library"
-          done
+          if [ -z "${{ steps.android_libs.outputs.cache-matched-key }}" ] || [ "${{ steps.android_cache.outputs.skip_cache }}" == "true" ]; then
+            haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
+            haxelib --global run hmm install
+            for library in polymod thx.core thx.semver FlxPartialSound; do
+              haxelib --global run hmm reinstall --force "$library"
+            done
+          else
+            echo "haxelibs restaurados do cache, instalação pulada."
+          fi
 
           if [ "${{ steps.android_cache.outputs.update_libs }}" == "true" ]; then
             if [ "${{ steps.android_cache.outputs.skip_cache }}" == "true" ]; then
@@ -158,27 +168,6 @@ jobs:
             --title "Android $TAG" \
             --notes "Build Android do NovaFlare Engine"
 
-      - name: Save Android libs to release
-        if: steps.android_cache.outputs.skip_cache == 'false'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          [ -d .haxelib ] || { echo "Sem .haxelib para salvar, pulando."; exit 0; }
-          rm -f /tmp/android-libs.tar.gz.part-*
-          tar -czf - --exclude='.git' .haxelib | split -b 1900m -d -a 2 - /tmp/android-libs.tar.gz.part-
-          echo "Partes geradas: $(ls /tmp/android-libs.tar.gz.part-* | wc -l)"
-
-          gh release view libs-cache >/dev/null 2>&1 || \
-            gh release create libs-cache --target "$GITHUB_SHA" --prerelease \
-              --title "Libs cache" --notes "Cache automático de haxelibs. Não apague."
-
-          gh release view libs-cache --json assets -q '.assets[].name' \
-            | grep '^android-libs.tar.gz.part-' \
-            | while read -r name; do gh release delete-asset libs-cache "$name" -y; done
-
-          gh release upload libs-cache /tmp/android-libs.tar.gz.part-*
-
   iOS:
     runs-on: macos-15
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
@@ -226,32 +215,41 @@ jobs:
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore iOS libs from release
+      - name: Restore iOS haxelibs cache
+        id: ios_libs
         if: steps.ios_cache.outputs.skip_cache == 'false'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          rm -rf /tmp/ios-parts && mkdir -p /tmp/ios-parts
-          if gh release download libs-cache -p 'ios-libs.tar.gz.part-*' -D /tmp/ios-parts --clobber 2>/dev/null; then
-            if cat /tmp/ios-parts/ios-libs.tar.gz.part-* | tar -xzf -; then
-              echo "Libs restauradas da release."
-            else
-              echo "Falha ao descompactar, seguindo sem cache."
-              rm -rf .haxelib
-            fi
-          else
-            echo "Nenhum cache na release, seguindo sem ele."
-          fi
+        uses: actions/cache@v4
+        with:
+          path: |
+            .haxelib
+            ~/haxelib
+          key: haxelib-ios-${{ hashFiles('hmm.json') }}-${{ github.run_id }}
+          restore-keys: |
+            haxelib-ios-${{ hashFiles('hmm.json') }}-
+
+      - name: Restore iOS native build cache
+        id: ios_native
+        if: steps.ios_cache.outputs.skip_cache == 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            export/release/ios/obj
+          key: native-ios-${{ hashFiles('Project.xml', 'hmm.json', 'source/**') }}-${{ github.run_id }}
+          restore-keys: |
+            native-ios-
 
       - name: Install iOS Libraries
         run: |
           haxelib setup ~/haxelib
-          haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
-          haxelib --global run hmm install
-          for library in polymod thx.core thx.semver FlxPartialSound; do
-            haxelib --global run hmm reinstall --force "$library"
-          done
+          if [ -z "${{ steps.ios_libs.outputs.cache-matched-key }}" ] || [ "${{ steps.ios_cache.outputs.skip_cache }}" == "true" ]; then
+            haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
+            haxelib --global run hmm install
+            for library in polymod thx.core thx.semver FlxPartialSound; do
+              haxelib --global run hmm reinstall --force "$library"
+            done
+          else
+            echo "haxelibs restaurados do cache, instalação pulada."
+          fi
 
           if [ "${{ steps.ios_cache.outputs.update_libs }}" == "true" ]; then
             if [ "${{ steps.ios_cache.outputs.skip_cache }}" == "true" ]; then
@@ -293,24 +291,3 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "iOS $TAG" \
             --notes "Build iOS do NovaFlare Engine"
-
-      - name: Save iOS libs to release
-        if: steps.ios_cache.outputs.skip_cache == 'false'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          [ -d .haxelib ] || { echo "Sem .haxelib para salvar, pulando."; exit 0; }
-          rm -f /tmp/ios-libs.tar.gz.part-*
-          tar -czf - --exclude='.git' .haxelib | split -b 1900m -d -a 2 - /tmp/ios-libs.tar.gz.part-
-          echo "Partes geradas: $(ls /tmp/ios-libs.tar.gz.part-* | wc -l)"
-
-          gh release view libs-cache >/dev/null 2>&1 || \
-            gh release create libs-cache --target "$GITHUB_SHA" --prerelease \
-              --title "Libs cache" --notes "Cache automático de haxelibs. Não apague."
-
-          gh release view libs-cache --json assets -q '.assets[].name' \
-            | grep '^ios-libs.tar.gz.part-' \
-            | while read -r name; do gh release delete-asset libs-cache "$name" -y; done
-
-          gh release upload libs-cache /tmp/ios-libs.tar.gz.part-*
