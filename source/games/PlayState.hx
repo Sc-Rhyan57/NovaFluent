@@ -2602,9 +2602,9 @@ class PlayState extends MusicBeatState
                                         else if (t == 'judge' && MpMatch.active)
                                         {
                                                 var nid:String = '';
-                                                try { nid = msg.noteId != null ? Std.string(msg.noteId) : ''; } catch(e:Dynamic) {}
-                                                if (nid != '' && msg.judgement != null)
-                                                        remoteJudgements.set(nid, {judgement: Std.string(msg.judgement), mustHit: msg.mustHit == true, gf: msg.gf == true});
+                                                try { nid = msg.n != null ? Std.string(msg.n) : ''; } catch(e:Dynamic) {}
+                                                if (nid != '' && msg.j != null)
+                                                        remoteJudgements.set(nid, {judgement: Std.string(msg.j)});
                                                 deferred.push(msg);
                                         }
                                         else
@@ -2628,6 +2628,7 @@ class PlayState extends MusicBeatState
                         MpMatch.reset();
                         MpMatch.pendingStatus = abortMsg;
                         MusicBeatState.switchState(new MultiplayerState());
+                        return;
                 }
                 // Release the countdown gate once every player reported loaded.
                 if (mpWaitingForLoad && mpAllLoaded)
@@ -2648,7 +2649,7 @@ class PlayState extends MusicBeatState
                                 {
                                         var info:Dynamic = remoteJudgements.get(remoteId);
                                         if (info == null)
-                                                info = {judgement: 'hit', mustHit: remoteNote.mustPress, gf: remoteNote.gfNote};
+                                                info = {judgement: 'hit'};
                                         try { applyRemoteJudge(remoteNote, info); } catch(e:Dynamic) {}
                                 }
                         }
@@ -5160,8 +5161,8 @@ class PlayState extends MusicBeatState
                 note.visible = true;
 
                 var judgement:String = info.judgement;
-                var isMustHitSide:Bool = info.mustHit == true;
-                var isGf:Bool = info.gf == true;
+                var isMustHitSide:Bool = note.mpSide;
+                var isGf:Bool = note.gfNote;
                 var char:Character = isMustHitSide ? boyfriend : dad;
                 if (isGf)
                         char = gf;

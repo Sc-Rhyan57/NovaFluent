@@ -411,6 +411,8 @@ class MpMatch
 		aborted = true;
 		abortReason = reason;
 		remotePaused = false;
+		if (socket != null)
+			socket.close();
 		socket = null;
 	}
 
@@ -419,10 +421,10 @@ class MpMatch
 		switch (m.type)
 		{
 			case 'judge':
-				var who:String = Std.string(m.username);
-				stats.set(who, m.stats);
-				if (who != localName && Std.string(m.judgement) != 'miss')
-					remoteHits.push(Std.string(m.noteId));
+				var who:String = Std.string(m.u);
+				stats.set(who, {score: m.s, combo: m.c, maxCombo: m.m, accuracy: m.a, dead: m.d == 1});
+				if (who != localName && Std.string(m.j) != 'miss')
+					remoteHits.push(Std.string(m.n));
 				refreshHud();
 
 			case 'dead':

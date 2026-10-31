@@ -200,7 +200,10 @@ class StrumNote extends FlxSprite
 		var sWidth = /*(PlayState.isPixelStage && PlayState.SONG.mania > maniaThresh) ? (180 + ((10 + (5 * (PlayState.SONG.mania - maniaThresh))) * (PlayState.SONG.mania - maniaThresh))) : */ Note.swagWidthUnscaled;
 		if (!ClientPrefs.data.middleScroll)
 		{
-			x = player == 0 ? 320 : 960;
+			var leftSide:Bool = player == 0;
+			if (MpMatch.active && !MpMatch.isHost)
+				leftSide = !leftSide;
+			x = leftSide ? 320 : 960;
 			x += ((sWidth * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
 		}
 		else

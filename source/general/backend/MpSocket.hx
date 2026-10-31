@@ -22,6 +22,7 @@ class MpSocket
 	var outbox:Array<String> = [];
 	var backlog:Array<{text:String, at:Float}> = [];
 	var closedSent:Bool = false;
+	var peerClosed:Bool = false;
 	var lastPing:Float = 0;
 	var lastSeen:Float = 0;
 
@@ -89,6 +90,7 @@ class MpSocket
 		{
 			NFLog.info('net', 'ws fechado' + (e == null ? '' : ' (' + Std.string(e) + ')'));
 			open = false;
+			peerClosed = true;
 			if (closedSent)
 				return;
 			closedSent = true;
@@ -129,7 +131,7 @@ class MpSocket
 
 	function flushBacklog():Void
 	{
-		if (!open || ws == null || backlog.length == 0)
+		if (!open || ws == null || closedSent || backlog.length == 0)
 			return;
 		if (backlog[0].at > Timer.stamp())
 			return;
@@ -154,7 +156,7 @@ class MpSocket
 
 	function rawSend(text:String):Void
 	{
-		if (ws == null)
+		if (ws == null || closedSent)
 			return;
 		try
 		{
@@ -200,7 +202,6 @@ class MpSocket
 			return;
 		try
 		{
-			s.pump();
 			s.flushBacklog();
 			s.heartbeat();
 		}
@@ -215,6 +216,8 @@ class MpSocket
 		if (ws == null)
 			return;
 		var now:Float = Timer.stamp();
+		if (closedSent)
+			return;
 		if (now - lastSeen > TIMEOUT_AFTER)
 		{
 			dropDead();
@@ -238,23 +241,6 @@ class MpSocket
 		close();
 	}
 
-	public function pump():Void
-	{
-		if (ws == null)
-			return;
-		var fn:Dynamic = Reflect.field(ws, 'process');
-		if (fn == null)
-			return;
-		try
-		{
-			Reflect.callMethod(ws, fn, []);
-		}
-		catch (e:Dynamic)
-		{
-			inbox.add({type: '_error', message: Std.string(e)});
-		}
-	}
-
 	public function close():Void
 	{
 		if (current == this)
@@ -265,7 +251,7 @@ class MpSocket
 		closedSent = true;
 		var target:Dynamic = ws;
 		ws = null;
-		if (target == null)
+		if (target == null || peerClosed)
 			return;
 		var fn:Dynamic = Reflect.field(target, 'close');
 		if (fn != null)
