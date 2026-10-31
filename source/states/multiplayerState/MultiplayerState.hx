@@ -102,6 +102,7 @@ class MultiplayerState extends MusicBeatState
         var availableMods:Array<String> = ['_base'];
         var createSongMods:Array<String> = [];
         var songsByMod:Map<String, Array<String>> = new Map();
+        var scanQueue:Array<String> = [];
         var modIndex:Int = 0;
         var dieOnMiss:Bool = true;
         var botplay:Bool = false;
@@ -360,6 +361,9 @@ class MultiplayerState extends MusicBeatState
         {
                 super.update(elapsed);
 
+                if (scanQueue.length > 0)
+                        scanStep();
+
                 try
                 {
                         pumpChunks();
@@ -616,16 +620,32 @@ class MultiplayerState extends MusicBeatState
 
         function refreshCreateSongs():Void
         {
+                scanQueue = availableMods.copy();
+                rebuildCreateSongs();
+        }
+
+        function scanStep():Void
+        {
+                if (scanQueue.length == 0)
+                        return;
+                var folder:String = scanQueue.shift();
+                if (!songsByMod.exists(folder))
+                        songsByMod.set(folder, songsOfMod(folder == BASE_FOLDER ? '' : folder));
+                rebuildCreateSongs();
+                refreshCreateLabels();
+        }
+
+        function rebuildCreateSongs():Void
+        {
+                var prevSong:String = createSongs.length > 0 ? createSongs[createSongIdx] : null;
+                var prevMod:String = createSongMods.length > 0 ? createSongMods[createSongIdx] : null;
                 createSongs = [];
                 createSongMods = [];
                 for (folder in availableMods)
                 {
                         var list:Array<String> = songsByMod.get(folder);
                         if (list == null)
-                        {
-                                list = songsOfMod(folder == BASE_FOLDER ? '' : folder);
-                                songsByMod.set(folder, list);
-                        }
+                                continue;
                         for (song in list)
                         {
                                 createSongs.push(song);
@@ -646,9 +666,19 @@ class MultiplayerState extends MusicBeatState
                                 }
                         }
                 }
+                else if (prevSong != null)
+                {
+                        for (i in 0...createSongs.length)
+                        {
+                                if (createSongs[i] == prevSong && createSongMods[i] == prevMod)
+                                {
+                                        createSongIdx = i;
+                                        break;
+                                }
+                        }
+                }
                 followSongMod();
         }
-
 
         function followSongMod():Void
         {
