@@ -1013,6 +1013,8 @@ class PlayState extends MusicBeatState
                 newText.text = StringTools.replace(text, "/storage/emulated/0/.NovaFlare Engine/", ""); // delete stupid path
                 #end
                 newText.color = color;
+                if (color == FlxColor.RED)
+                        general.backend.NFLog.warn('script', text);
                 if (color == FlxColor.RED && MpMatch.active)
                         MpMatch.reportError(text);
                 newText.disableTime = 6;
@@ -1682,6 +1684,7 @@ class PlayState extends MusicBeatState
         function startSong():Void
         {
                 startingSong = false;
+                general.backend.NFLog.info('song', 'início: ' + SONG.song + ' dificuldade=' + Difficulty.getString() + ' mp=' + MpMatch.active);
                 GABridge.sendDesign("song:start", 1.0, {song: SONG.song.toLowerCase(), difficulty: Difficulty.getString(), storyMode: isStoryMode});
 
                 @:privateAccess
@@ -1870,6 +1873,7 @@ class PlayState extends MusicBeatState
                                 var mpMine:Bool = !MpMatch.active || (MpMatch.isHost == gottaHitNote);
                                 swagNote.mustPress = MpMatch.active ? mpMine : gottaHitNote;
                                 swagNote.mpRemote = MpMatch.active && !mpMine;
+                                swagNote.mpSide = gottaHitNote;
                                 swagNote.sustainLength = songNotes[2];
 
                                 if (isPe104)
@@ -1915,6 +1919,7 @@ class PlayState extends MusicBeatState
                                                 sustainNote.hitMultUpdate(susNote, floorSus);
                                                 sustainNote.mustPress = swagNote.mustPress;
                                                 sustainNote.mpRemote = swagNote.mpRemote;
+                                                sustainNote.mpSide = swagNote.mpSide;
                                                 sustainNote.gfNote = (section.gfSection && (songNotes[1]<(SONG.mania + 1)));
                                                 sustainNote.noteType = swagNote.noteType;
                                                 sustainNote.scrollFactor.set();
@@ -2546,6 +2551,7 @@ class PlayState extends MusicBeatState
 
         override function update(elapsed:Float)
         {
+                logSongProgress();
                 // Drain only the system messages that MpMatch.tick() does NOT know
                 // about (playerLoaded, allLoaded).  We pop one at a time and push
                 // back anything we don't handle, so tick() still sees its messages
@@ -3644,6 +3650,16 @@ class PlayState extends MusicBeatState
         }
 
         public var transitioning = false;
+
+        var nflogNextAt:Float = 0;
+
+        function logSongProgress():Void
+        {
+                if (!startedCountdown || Conductor.songPosition < nflogNextAt)
+                        return;
+                nflogNextAt = Conductor.songPosition + 10000;
+                general.backend.NFLog.info('song', 'posição ' + Std.int(Conductor.songPosition / 1000) + 's em ' + SONG.song + ' notas=' + notes.length);
+        }
 
         public function endSong()
         {
@@ -4761,7 +4777,7 @@ class PlayState extends MusicBeatState
                                 callOnHScript('noteMiss', [note]);
                 }
                 // play character anims
-                var char:Character = ClientPrefs.data.playOpponent ? dad : boyfriend;
+                var char:Character = MpMatch.active && note != null ? (note.mpSide ? boyfriend : dad) : (ClientPrefs.data.playOpponent ? dad : boyfriend);
                 if ((note != null && note.gfNote) || (SONG.notes[curSection] != null && SONG.notes[curSection].gfSection))
                         char = gf;
 
@@ -5028,7 +5044,7 @@ class PlayState extends MusicBeatState
                 {
                         var animToPlay:String = singAnimation(note.noteData);
 
-                        var char:Character = boyfriend;
+                        var char:Character = MpMatch.active && !note.mpSide ? dad : boyfriend;
                         var animCheck:String = 'hey';
                         if (note.gfNote)
                         {

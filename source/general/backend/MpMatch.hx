@@ -422,6 +422,7 @@ class MpMatch
 
 			case 'notice':
 				notices.push(Std.string(m.from) + ': ' + Std.string(m.text));
+				NFLog.warn('notice', Std.string(m.from) + ': ' + Std.string(m.text));
 				while (notices.length > 3)
 					notices.shift();
 				refreshHud();

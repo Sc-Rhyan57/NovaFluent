@@ -58,6 +58,7 @@ class CrashHandler
 		e.stopPropagation();
 		e.stopImmediatePropagation();
 
+		general.backend.NFLog.exception('uncaught', e.error);
 		var now:Float = Date.now().getTime();
 		if (now - lastErrorTime < ERROR_DEBOUNCE_MS)
 			return;
@@ -154,6 +155,7 @@ class CrashHandler
 				'timestamp=${Date.now()}\n' +
 				'message=$m\n' +
 				'\n[haxe_exception_stack]\n$stackLabel\n' +
+				'\n[session_log_tail]\n${general.backend.NFLog.tail(120)}\n' +
 				'\n[haxe_runtime_snapshot]\n$haxeSnapshot\n' +
 				'\n[haxe_exception_stack_raw]\n${haxe.CallStack.toString(stack)}\n' +
 				'\n[haxe_call_stack]\n${haxe.CallStack.toString(callStack)}\n' +
@@ -344,6 +346,7 @@ class CrashHandler
 	#if (cpp || hl)
 	private static function onError(message:Dynamic):Void
 	{
+		general.backend.NFLog.error('hxcpp', Std.string(message));
 		throw Std.string(message);
 	}
 	#end

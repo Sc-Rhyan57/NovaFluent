@@ -21,6 +21,7 @@ import general.backend.MpModTransfer.ModPlan;
 import general.backend.MpScripts;
 import general.backend.MpSocket;
 import general.backend.MusicBeatState;
+import general.backend.NFLog;
 import general.backend.Mods;
 import general.backend.Paths;
 import states.freeplayState.FreeplayState;
@@ -357,12 +358,29 @@ class MultiplayerState extends MusicBeatState
         {
                 super.update(elapsed);
 
-                pumpChunks();
+                try
+                {
+                        pumpChunks();
+                }
+                catch (e:Dynamic)
+                {
+                        chunkQueue = [];
+                        NFLog.exception('mod', e);
+                        setStatus('Erro ao enviar o mod: ' + Std.string(e));
+                }
 
                 var ev:Dynamic = events.pop(false);
                 while (ev != null)
                 {
-                        handleEvent(ev);
+                        try
+                        {
+                                handleEvent(ev);
+                        }
+                        catch (e:Dynamic)
+                        {
+                                NFLog.exception('ui', e);
+                                        setStatus('Erro interno: ' + Std.string(e));
+                        }
                         ev = events.pop(false);
                 }
 
@@ -372,7 +390,15 @@ class MultiplayerState extends MusicBeatState
                         var msg:Dynamic = s.inbox.pop(false);
                         while (msg != null)
                         {
-                                handleServer(msg);
+                                try
+                                {
+                                        handleServer(msg);
+                                }
+                                catch (e:Dynamic)
+                                {
+                                        NFLog.exception('ui', e);
+                                        setStatus('Erro interno: ' + Std.string(e));
+                                }
                                 msg = s.inbox.pop(false);
                         }
                 }
@@ -721,6 +747,18 @@ class MultiplayerState extends MusicBeatState
                 return folder == BASE_FOLDER ? '' : folder;
         }
 
+        function songAvailable(modDir:String, name:String):Bool
+        {
+                var folder:String = Paths.formatToSongPath(name);
+                var dirs:Array<String> = [Paths.getSharedPath('data/' + folder)];
+                if (modDir != '')
+                        dirs.push(Paths.mods(modDir + '/data/' + folder));
+                for (d in dirs)
+                        if (FileSystem.exists(d) && FileSystem.isDirectory(d))
+                                return true;
+                return false;
+        }
+
         function songsOfMod(modDir:String):Array<String>
         {
                 var out:Array<String> = [];
@@ -737,7 +775,7 @@ class MultiplayerState extends MusicBeatState
                                 for (song in leWeek.songs)
                                 {
                                         var n:String = Std.string(song[0]);
-                                        if (n != '' && out.indexOf(n) == -1)
+                                        if (n != '' && out.indexOf(n) == -1 && songAvailable(modDir, n))
                                                 out.push(n);
                                 }
                         }
@@ -774,6 +812,7 @@ class MultiplayerState extends MusicBeatState
                 if (done >= total)
                 {
                         setProgress(1, 'Mod entregue para ' + to + '.');
+                        NFLog.info('mod', 'mod entregue para ' + to);
                         setStatus('Mod entregue para ' + to + '.');
                         return;
                 }
@@ -817,6 +856,7 @@ class MultiplayerState extends MusicBeatState
                 }
                 catch (e:Dynamic)
                 {
+                        NFLog.exception('match', e);
                         setStatus('Não consegui carregar a música: ' + Std.string(e));
                         return null;
                 }
@@ -999,6 +1039,7 @@ class MultiplayerState extends MusicBeatState
                         case 'create':
                                 if (ev.status == 201 && ev.json.success == true)
                                 {
+                                        NFLog.info('room', 'servidor criado: ' + Std.string(ev.json.roomId));
                                         pendingJoin = {roomId: ev.json.roomId, password: pendingPassword};
                                         connectSocket();
                                 }
@@ -1012,6 +1053,7 @@ class MultiplayerState extends MusicBeatState
                                 if (ev.error != null)
                                 {
                                         setProgress(0, 'Falha ao preparar o mod.');
+                                        NFLog.error('mod', 'falha ao preparar: ' + Std.string(ev.error));
                                         setStatus('Falha ao preparar o mod: ' + ev.error);
                                         return;
                                 }
@@ -1031,6 +1073,7 @@ class MultiplayerState extends MusicBeatState
                                 {
                                         modReady = true;
                                         setProgress(1, 'Mod instalado.');
+                                        NFLog.info('mod', 'mod instalado');
                                         setStatus('Mod instalado. Clique em PRONTO.');
                                         refreshRoomUI();
                                 }
@@ -1038,6 +1081,7 @@ class MultiplayerState extends MusicBeatState
                                 {
                                         requested = false;
                                         setProgress(0, 'Falha ao instalar o mod.');
+                                        NFLog.error('mod', 'falha ao instalar: ' + Std.string(ev.error));
                                         setStatus('Falha ao instalar o mod: ' + ev.error);
                                 }
 
@@ -1063,6 +1107,7 @@ class MultiplayerState extends MusicBeatState
                         case '_close':
                                 if (mode == 'room')
                                 {
+                                        NFLog.warn('room', 'conexão com a sala caiu');
                                         setStatus('Conexão com a sala caiu.');
                                         closeSocket();
                                         showMode('lobby');
@@ -1096,6 +1141,7 @@ class MultiplayerState extends MusicBeatState
                                 if (isHost && roomFolder != BASE_FOLDER)
                                 {
                                         var requester:String = Std.string(m.from);
+                                        NFLog.info('mod', requester + ' pediu o mod');
                                         appendChat('* ' + requester + ' pediu o mod');
                                         if (pendingSend.indexOf(requester) == -1)
                                                 pendingSend.push(requester);
@@ -1135,6 +1181,7 @@ class MultiplayerState extends MusicBeatState
                                 pendingStart = true;
                                 MpMatch.scriptPaths = [];
                                 MpScripts.fetch(function(paths:Array<String>) events.add({kind: 'scripts', paths: paths}));
+                                NFLog.info('match', 'partida começando');
                                 setStatus('Partida começando...');
 
                         case 'playerLoaded':
@@ -1156,6 +1203,7 @@ class MultiplayerState extends MusicBeatState
                                 isHost = false;
                                 closeSocket();
                                 showMode('lobby');
+                                NFLog.warn('room', 'sala fechada: ' + Std.string(m.reason));
                                 setStatus('O servidor foi fechado: ' + m.reason);
                                 refreshRooms();
 
@@ -1216,6 +1264,7 @@ class MultiplayerState extends MusicBeatState
                 for (i in 0...total)
                         chunkQueue.push({to: to, index: i, total: total});
                 setProgress(0, 'Enviando o mod para ' + to + ' (' + hostPlan.files + ' arquivos)...');
+                NFLog.info('mod', 'enviando para ' + to + ': ' + hostPlan.files + ' arquivos, ' + total + ' pedaços, ' + Std.string(hostPlan.bytes) + ' bytes');
                 setStatus('Enviando o mod para ' + to + ' (' + hostPlan.files + ' arquivos, ' + total + ' pedaços)...');
         }
 
@@ -1278,6 +1327,7 @@ class MultiplayerState extends MusicBeatState
                 incomingQueue = queue;
                 incomingIndex = 0;
                 setProgress(0, 'Recebendo a estrutura do mod...');
+                NFLog.info('mod', 'recebendo o mod do host');
                 setStatus('Recebendo o mod do host...');
                 Thread.create(() -> MpModTransfer.receive(queue, events, folder));
         }

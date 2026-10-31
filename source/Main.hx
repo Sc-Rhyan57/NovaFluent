@@ -128,6 +128,7 @@ class Main extends Sprite
 		setupMobileStorage();
 		mobile.backend.CrashHandler.refreshNativeCrashDirectory();
 		#end
+		general.backend.NFLog.init(states.mainMenuState.MainMenuState.novaFlareEngineCommit);
 		mobile.backend.CrashHandler.init();
 		gameanalytics.GAAppLifecycle.install();
 

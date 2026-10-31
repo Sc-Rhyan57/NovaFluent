@@ -38,6 +38,7 @@ class MpSocket
 
 		ws.onopen = function()
 		{
+			NFLog.info('net', 'ws aberto');
 			open = true;
 			lastSeen = Timer.stamp();
 			var pending:Array<String> = outbox;
@@ -62,20 +63,24 @@ class MpSocket
 				var msg:Dynamic = Json.parse(text);
 				if (msg != null && msg.type == 'pong')
 					measure(msg);
+				logIncoming(msg);
 				inbox.add(msg);
 			}
 			catch (e:Dynamic)
 			{
+				NFLog.warn('net', 'mensagem inválida recebida (' + text.length + ' caracteres): ' + Std.string(e));
 			}
 		};
 
 		ws.onerror = function(e:Dynamic)
 		{
+			NFLog.warn('net', 'erro no websocket: ' + Std.string(e));
 			inbox.add({type: '_error', message: Std.string(e)});
 		};
 
 		ws.onclose = function(?e:Dynamic)
 		{
+			NFLog.info('net', 'ws fechado');
 			open = false;
 			if (closedSent)
 				return;
@@ -89,6 +94,9 @@ class MpSocket
 		if (ws == null)
 			return;
 		var text:String = Json.stringify(obj);
+		var kind:String = Std.string(Reflect.field(obj, 'type'));
+		if (kind != 'modChunk' && kind != 'modAck' && kind != 'ping')
+			NFLog.info('net', '> ' + kind);
 		if (!open)
 		{
 			outbox.push(text);
@@ -107,8 +115,22 @@ class MpSocket
 		}
 		catch (e:Dynamic)
 		{
+			NFLog.warn('net', 'falha ao enviar: ' + Std.string(e));
 			inbox.add({type: '_error', message: Std.string(e)});
 		}
+	}
+
+	function logIncoming(msg:Dynamic):Void
+	{
+		if (msg == null)
+			return;
+		var kind:String = Std.string(msg.type);
+		if (kind == 'pong' || kind == 'modChunk' || kind == 'judge')
+			return;
+		if (kind == 'error')
+			NFLog.warn('net', '< error: ' + Std.string(msg.message));
+		else
+			NFLog.info('net', '< ' + kind);
 	}
 
 	function measure(msg:Dynamic):Void
@@ -124,8 +146,15 @@ class MpSocket
 		var s:MpSocket = current;
 		if (s == null)
 			return;
-		s.pump();
-		s.heartbeat();
+		try
+		{
+			s.pump();
+			s.heartbeat();
+		}
+		catch (e:Dynamic)
+		{
+			s.inbox.add({type: '_error', message: Std.string(e)});
+		}
 	}
 
 	function heartbeat():Void
@@ -150,6 +179,7 @@ class MpSocket
 	{
 		if (closedSent)
 			return;
+		NFLog.warn('net', 'sem resposta do servidor por ' + TIMEOUT_AFTER + 's - desconectando');
 		inbox.add({type: '_error', message: 'timeout'});
 		inbox.add({type: '_close'});
 		close();
