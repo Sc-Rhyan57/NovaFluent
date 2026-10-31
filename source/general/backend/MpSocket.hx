@@ -21,6 +21,7 @@ class MpSocket
 	var ws:Dynamic;
 	var outbox:Array<String> = [];
 	var backlog:Array<{text:String, at:Float}> = [];
+	var corrupted:Bool = false;
 	var closedSent:Bool = false;
 	var lastPing:Float = 0;
 	var lastSeen:Float = 0;
@@ -57,7 +58,7 @@ class MpSocket
 				text = cast m;
 			else if (Type.enumConstructor(m) == 'StrMessage')
 				text = Std.string(Type.enumParameters(m)[0]);
-			if (text == null)
+			if (text == null || corrupted)
 				return;
 			lastSeen = Timer.stamp();
 			try
@@ -70,7 +71,11 @@ class MpSocket
 			}
 			catch (e:Dynamic)
 			{
-				NFLog.warn('net', 'mensagem inválida recebida (' + text.length + ' caracteres): ' + Std.string(e));
+				NFLog.warn('net', 'mensagem inválida recebida (' + text.length + ' caracteres, códigos iniciais ' + [for (i in 0...Std.int(Math.min(12, text.length))) text.charCodeAt(i)].join(',') + '): ' + Std.string(e));
+				corrupted = true;
+				NFLog.error('net', 'fluxo do servidor corrompido, sala será encerrada para evitar crash');
+				inbox.add({type: '_error', message: 'dados corrompidos do servidor, conexão encerrada.'});
+				inbox.add({type: '_close'});
 			}
 		};
 
@@ -87,7 +92,7 @@ class MpSocket
 
 		ws.onclose = function(?e:Dynamic)
 		{
-			NFLog.info('net', 'ws fechado');
+			NFLog.info('net', 'ws fechado' + (e == null ? '' : ' (' + Std.string(e) + ')'));
 			open = false;
 			if (closedSent)
 				return;

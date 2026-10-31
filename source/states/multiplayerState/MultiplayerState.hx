@@ -30,8 +30,6 @@ import sys.FileSystem;
 import sys.io.File;
 import sys.thread.Deque;
 import sys.thread.Thread;
-import general.backend.OnlineMods;
-import general.backend.OnlineMods.OnlineMod;
 
 typedef RoomSlot =
 {
@@ -102,10 +100,8 @@ class MultiplayerState extends MusicBeatState
         var sentTo:Map<String, Int> = new Map();
         var sendTotalTo:Map<String, Int> = new Map();
         var availableMods:Array<String> = ['_base'];
-        var catalogMods:Array<OnlineMod> = [];
         var createSongMods:Array<String> = [];
-        var installButton:MpButton;
-        var installing:Bool = false;
+        var songsByMod:Map<String, Array<String>> = new Map();
         var modIndex:Int = 0;
         var dieOnMiss:Bool = true;
         var botplay:Bool = false;
@@ -326,9 +322,6 @@ class MultiplayerState extends MusicBeatState
 
                 button('create', PX + 30, 510, 300, 52, 'CRIAR SERVIDOR', B_PRIMARY, submitCreate);
                 button('create', PX + 350, 510, 300, 52, 'VOLTAR', B_NEUTRAL, function() showMode('lobby'));
-                installButton = button('create', PX + 670, 510, 300, 52, 'BAIXAR MOD', B_PRIMARY, installSelectedMod);
-                installButton.show(false);
-                OnlineMods.fetchList(function(list:Array<OnlineMod>, error:String) events.add({kind: 'catalog', list: list, error: error}));
         }
 
         function buildRoom():Void
@@ -600,9 +593,6 @@ class MultiplayerState extends MusicBeatState
                 catch (e:Dynamic)
                 {
                 }
-                for (m in catalogMods)
-                        if (availableMods.indexOf(m.folder) == -1)
-                                availableMods.push(m.folder);
                 // If the pending song came from a mod, pre-select it.
                 var p:PendingSong = MpMatch.pendingSong;
                 if (p != null && p.mod != null && p.mod != '')
@@ -624,55 +614,19 @@ class MultiplayerState extends MusicBeatState
                 refreshCreateLabels();
         }
 
-        function isInstalled(folder:String):Bool
-        {
-                if (folder == null)
-                        return false;
-                if (folder == BASE_FOLDER)
-                        return true;
-                return FileSystem.exists(Paths.mods(folder));
-        }
-
-        function findCatalog(folder:String):OnlineMod
-        {
-                for (m in catalogMods)
-                        if (m.folder == folder)
-                                return m;
-                return null;
-        }
-
-        function installSelectedMod():Void
-        {
-                var folder:String = createFolder();
-                var mod:OnlineMod = findCatalog(folder);
-                if (installing || mod == null || isInstalled(folder))
-                        return;
-                installing = true;
-                setStatus('Baixando ' + mod.name + '...');
-                Thread.create(() ->
-                {
-                        try
-                        {
-                                OnlineMods.install(mod, function(phase:String, progress:Float)
-                                        events.add({kind: 'modPhase', phase: phase, progress: progress}));
-                                events.add({kind: 'modInstalled', folder: mod.folder});
-                        }
-                        catch (e:Dynamic)
-                        {
-                                events.add({kind: 'modInstallFailed', error: Std.string(e)});
-                        }
-                });
-        }
-
         function refreshCreateSongs():Void
         {
                 createSongs = [];
                 createSongMods = [];
                 for (folder in availableMods)
                 {
-                        if (!isInstalled(folder))
-                                continue;
-                        for (song in songsOfMod(folder == BASE_FOLDER ? '' : folder))
+                        var list:Array<String> = songsByMod.get(folder);
+                        if (list == null)
+                        {
+                                list = songsOfMod(folder == BASE_FOLDER ? '' : folder);
+                                songsByMod.set(folder, list);
+                        }
+                        for (song in list)
                         {
                                 createSongs.push(song);
                                 createSongMods.push(folder);
@@ -694,6 +648,7 @@ class MultiplayerState extends MusicBeatState
                 }
                 followSongMod();
         }
+
 
         function followSongMod():Void
         {
@@ -734,17 +689,15 @@ class MultiplayerState extends MusicBeatState
         function refreshCreateLabels():Void
         {
                 var song:String = createSongs.length == 0 ? 'nenhuma' : createSongs[createSongIdx];
-                var folder:String = createFolder();
-                var installed:Bool = isInstalled(folder);
-                createSongText.text = 'Música: ' + song + '   ·   Mod: ' + folder + (installed ? '' : ' (não instalado)');
+                createSongText.text = 'Música: ' + song + '   ·   Mod: ' + createFolder();
                 songPickButton.setLabel(createSongs.length == 0 ? 'SEM MÚSICAS' : 'MÚSICA: ' + song + '  (' + (createSongIdx + 1) + '/' + createSongs.length + ')');
                 dieButton.setLabel('MORRER AO ERRAR: ' + yn(dieOnMiss));
                 botButton.setLabel('BOTPLAY: ' + yn(botplay));
                 speedButton.setLabel('VELOCIDADE: ' + NOTE_SPEEDS[speedIndex]);
                 var modLabel:String = availableMods.length > 0 ? availableMods[modIndex] : BASE_FOLDER;
-                modButton.setLabel('MOD: ' + modLabel + '  (' + (modIndex + 1) + '/' + availableMods.length + ')' + (installed ? '' : '  · BAIXAR'));
-                installButton.show(!installed && findCatalog(folder) != null);
+                modButton.setLabel('MOD: ' + modLabel + '  (' + (modIndex + 1) + '/' + availableMods.length + ')');
         }
+
 
         function submitCreate():Void
         {
@@ -752,11 +705,6 @@ class MultiplayerState extends MusicBeatState
                 if (folder == null || createSongs.length == 0)
                 {
                         setStatus('Escolha um mod com músicas antes de criar o servidor.');
-                        return;
-                }
-                if (!isInstalled(folder))
-                {
-                        setStatus('Clique em BAIXAR MOD antes de criar o servidor.');
                         return;
                 }
                 if (createSongMods[createSongIdx] != folder)
@@ -979,6 +927,7 @@ class MultiplayerState extends MusicBeatState
                                 chartEvents = cast song.events;
                 }
                 catch(e:Dynamic) {}
+                NFLog.info('net', 'chart notas=' + notes.length + ' eventos=' + chartEvents.length + ' bytes=' + (haxe.Json.stringify(notes).length + haxe.Json.stringify(chartEvents).length));
                 socket.send({type: 'chart', notes: notes, events: chartEvents});
                 socket.send({type: 'start'});
                 setStatus('Enviando a música para o servidor...');
@@ -1142,34 +1091,6 @@ class MultiplayerState extends MusicBeatState
                                         setStatus(errorOf(ev.json));
                                 }
 
-                        case 'catalog':
-                                if (ev.error == null && ev.list != null)
-                                        catalogMods = cast ev.list;
-                                else if (ev.error != null)
-                                        NFLog.warn('mods', 'catálogo online indisponível: ' + ev.error);
-                                scanAvailableMods();
-                                refreshCreateSongs();
-                                refreshCreateLabels();
-
-                        case 'modPhase':
-                                setStatus(ev.progress < 0 ? ev.phase + '...' : ev.phase + '... ' + Std.int(ev.progress * 100) + '%');
-
-                        case 'modInstalled':
-                                installing = false;
-                                var keep:String = createFolder();
-                                scanAvailableMods();
-                                var keepIdx:Int = availableMods.indexOf(keep);
-                                if (keepIdx != -1)
-                                        modIndex = keepIdx;
-                                refreshCreateSongs();
-                                refreshCreateLabels();
-                                setStatus('Mod instalado: ' + ev.folder);
-
-                        case 'modInstallFailed':
-                                installing = false;
-                                NFLog.error('mods', 'falha ao baixar mod: ' + ev.error);
-                                setStatus('Falha ao baixar o mod: ' + ev.error);
-
                         case 'plan':
                                 encoding = false;
                                 if (ev.error != null)
@@ -1250,6 +1171,7 @@ class MultiplayerState extends MusicBeatState
 
                         case 'chart':
                                 MpMatch.storeChart(cast m.entries);
+                                NFLog.info('net', 'recebi chart notas=' + (m.entries == null ? 0 : m.entries.length) + ' eventos=' + (m.events == null ? 0 : m.events.length));
                                 if (m.events != null)
                                         storedEvents = cast m.events;
 

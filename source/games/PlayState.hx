@@ -889,7 +889,18 @@ class PlayState extends MusicBeatState
                 #if LUA_ALLOWED
                 if (MpMatch.active)
                         for (scriptPath in MpMatch.scriptPaths)
+                        {
+                            NFLog.info('lua', 'abrindo ' + scriptPath);
+                            try
+                            {
                                 new FunkinLua(scriptPath);
+                            }
+                            catch (e:Dynamic)
+                            {
+                                NFLog.error('lua', 'falha ao carregar ' + scriptPath + ': ' + Std.string(e));
+                            }
+                            NFLog.info('lua', 'carregado ' + scriptPath);
+                        }
                 #end
                 hscriptGrp.execute();
                 hscriptGrp.call("onCreate");
