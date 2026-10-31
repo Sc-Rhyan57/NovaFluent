@@ -18,13 +18,7 @@ typedef ModEntry =
 	var stage:Int;
 };
 
-typedef ModPiece =
-{
-	var length:Int;
-	?bytes:Bytes;
-	?path:String;
-	?offset:Int;
-};
+typedef ModPiece = {length:Int, ?bytes:Bytes, ?path:String, ?offset:Int};
 
 typedef ModPlan =
 {
