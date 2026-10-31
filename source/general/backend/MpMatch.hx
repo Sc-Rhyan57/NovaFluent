@@ -289,7 +289,7 @@ class MpMatch
 		return [tagLocal, tagRemote];
 	}
 
-	public static function placeNameTags():Void
+	public static function placeNameTags(barY:Float):Void
 	{
 		if (tagLocal == null || tagRemote == null)
 			return;
@@ -297,8 +297,10 @@ class MpMatch
 		tagRemote.text = '[ ' + (opponentName == '' ? 'ESPERANDO' : opponentName) + ' ]';
 		tagLocal.x = FlxG.width - tagLocal.width - 16;
 		tagRemote.x = 16;
-		tagLocal.y = 36;
-		tagRemote.y = 36;
+		tagLocal.y = barY;
+		tagRemote.y = barY;
+		if (hud != null)
+			hud.y = barY + 24;
 	}
 
 	public static function scriptDirs(sub:String):Array<String>

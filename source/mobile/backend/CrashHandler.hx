@@ -23,7 +23,10 @@ using general.backend.CoolUtil;
 class CrashHandler
 {
 	private static inline var ERROR_DEBOUNCE_MS:Float = 3000;
+	private static inline var RECOVERY_LIMIT:Int = 5;
+	private static inline var RECOVERY_WINDOW_MS:Float = 10000;
 	private static var lastErrorTime:Float = 0;
+	private static var recentErrors:Array<Float> = [];
 
 	public static var installed(default, null):Bool = false;
 
@@ -58,8 +61,20 @@ class CrashHandler
 		e.stopPropagation();
 		e.stopImmediatePropagation();
 
-		general.backend.NFLog.exception('uncaught', e.error);
 		var now:Float = Date.now().getTime();
+		var errorStack:Array<haxe.CallStack.StackItem> = [];
+		try errorStack = haxe.CallStack.exceptionStack(true) catch (_:Dynamic) {}
+		general.backend.NFLog.exception('uncaught', e.error, errorStack);
+
+		while (recentErrors.length > 0 && now - recentErrors[0] > RECOVERY_WINDOW_MS)
+			recentErrors.shift();
+		recentErrors.push(now);
+		if (recentErrors.length <= RECOVERY_LIMIT)
+		{
+			general.backend.NFLog.warn('recovered', 'erro não fatal, jogo continua (' + recentErrors.length + '/' + RECOVERY_LIMIT + ' em ' + Std.int(RECOVERY_WINDOW_MS / 1000) + 's)');
+			return;
+		}
+
 		if (now - lastErrorTime < ERROR_DEBOUNCE_MS)
 			return;
 		lastErrorTime = now;
@@ -76,9 +91,8 @@ class CrashHandler
 			m = '${err.text}';
 		}
 
-		var stack:Array<haxe.CallStack.StackItem> = [];
+		var stack:Array<haxe.CallStack.StackItem> = errorStack;
 		var callStack:Array<haxe.CallStack.StackItem> = [];
-		try stack = haxe.CallStack.exceptionStack(true) catch (_:Dynamic) {}
 		try callStack = haxe.CallStack.callStack() catch (_:Dynamic) {}
 
 		var stackLabelArr:Array<String> = [];
@@ -187,7 +201,7 @@ class CrashHandler
 		}
 
 		showError(buildErrorText(m, stackLabelArr));
-		general.backend.NativeCrashHandler.setHaxeRuntimeSnapshot("");
+		general.backend.NFLog.syncNative();
 		#end
 	}
 

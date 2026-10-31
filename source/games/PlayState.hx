@@ -711,11 +711,17 @@ class PlayState extends MusicBeatState
                 scoreTxt.visible = !ClientPrefs.data.hideHud;
                 add(scoreTxt);
                 if (MpMatch.active)
-                        add(MpMatch.createHud());
-                if (MpMatch.active)
                 {
+                        var mpHud:FlxText = MpMatch.createHud();
+                        mpHud.cameras = [camHUD];
+                        mpHud.visible = !ClientPrefs.data.hideHud;
+                        add(mpHud);
                         for (tag in MpMatch.createNameTags())
+                        {
+                                tag.cameras = [camHUD];
+                                tag.visible = !ClientPrefs.data.hideHud;
                                 add(tag);
+                        }
                         for (overlay in MpMatch.createOverlay(camOther))
                                 add(overlay);
                 }
@@ -1837,6 +1843,7 @@ class PlayState extends MusicBeatState
 
                 Note.init(instance);
 
+                general.backend.NFLog.info('chart', 'versao=' + Song.chartEngineVersion + ' mania=' + SONG.mania + ' secoes=' + songData.notes.length + ' mp=' + MpMatch.active + ' host=' + MpMatch.isHost);
                 for (section in songData.notes)
                 {
                         for (songNotes in section.sectionNotes)
@@ -2620,7 +2627,7 @@ class PlayState extends MusicBeatState
                         MpMatch.updateOverlay();
                         if (!MpMatch.isHost)
                                 syncRemotePause();
-                        MpMatch.placeNameTags();
+                        MpMatch.placeNameTags(scoreTxt.y);
                         for (remoteId in MpMatch.takeRemoteHits())
                         {
                                 var remoteNote:Note = MpMatch.remoteNotes.get(remoteId);
@@ -5506,6 +5513,7 @@ class PlayState extends MusicBeatState
                         setOnScripts('mustHitSection', SONG.notes[curSection].mustHitSection);
                         setOnScripts('altAnim', SONG.notes[curSection].altAnim);
                         setOnScripts('gfSection', SONG.notes[curSection].gfSection);
+                        general.backend.NFLog.info('sec', 'secao=' + curSection + ' mustHit=' + SONG.notes[curSection].mustHitSection + ' gf=' + SONG.notes[curSection].gfSection + ' tempo=' + Std.int(Conductor.songPosition));
                 }
                 super.sectionHit();
 

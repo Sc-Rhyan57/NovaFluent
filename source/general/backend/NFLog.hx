@@ -11,11 +11,15 @@ import sys.thread.Mutex;
 class NFLog
 {
 	public static final KEEP_SESSIONS:Int = 10;
+	static final RECENT_LINES:Int = 120;
+	static final NATIVE_LINES:Int = 40;
 
 	static var out:FileOutput = null;
 	static var lock:Mutex = new Mutex();
 	static var ready:Bool = false;
 	static var sessionPath:String = null;
+	static var recent:Array<String> = [];
+	static var lastNative:Float = 0;
 
 	public static function init(commit:String):Void
 	{
@@ -84,24 +88,38 @@ class NFLog
 	{
 		var line:String = '[' + stamp(false) + '] ' + level + ' ' + tag + ' ' + msg;
 		try
-		{
-			Sys.println(line);
-		}
-		catch (_:Dynamic)
-		{
-		}
-		if (!ready || out == null)
-			return;
+			Sys.println(line)
+		catch (_:Dynamic) {}
+
 		lock.acquire();
-		try
+		recent.push(line);
+		if (recent.length > RECENT_LINES)
+			recent.shift();
+		if (ready && out != null)
 		{
-			out.writeString(line + '\n');
-			out.flush();
-		}
-		catch (_:Dynamic)
-		{
+			try
+			{
+				out.writeString(line + '\n');
+				out.flush();
+			}
+			catch (_:Dynamic) {}
 		}
 		lock.release();
+
+		if (level == 'ERROR' || Date.now().getTime() - lastNative > 1000)
+			syncNative();
+	}
+
+	public static function syncNative():Void
+	{
+		lastNative = Date.now().getTime();
+		#if (cpp && (windows || android))
+		lock.acquire();
+		var from:Int = Std.int(Math.max(0, recent.length - NATIVE_LINES));
+		var text:String = recent.slice(from).join('\n');
+		lock.release();
+		general.backend.NativeCrashHandler.setHaxeRuntimeSnapshot('[nflog]\n' + text);
+		#end
 	}
 
 	static function directory():String
