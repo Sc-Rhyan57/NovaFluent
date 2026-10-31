@@ -421,8 +421,10 @@ class PlayState extends MusicBeatState
                 if (MpMatch.active)
                         cpuControlled = MpMatch.botplay;
                 cpuControlled_opponent = ClientPrefs.getGameplaySetting('botplay');
+                if (MpMatch.active)
+                        cpuControlled_opponent = MpMatch.botplay;
                 guitarHeroSustains = ClientPrefs.data.guitarHeroSustains;
-                if (ClientPrefs.data.playOpponent)
+                if (!MpMatch.active && MpMatch.playsOpponent())
                         cpuControlled = ClientPrefs.data.botOpponentFix;
 
                 replayExam = new Replay(this);
@@ -684,7 +686,7 @@ class PlayState extends MusicBeatState
                 healthBar = new Bar(0, FlxG.height * (!ClientPrefs.data.downScroll ? 0.89 : 0.11), 'healthBar', function() return health, 0, 2,
                         ClientPrefs.data.oldHealthBarVersion);
                 healthBar.screenCenter(X);
-                healthBar.leftToRight = ClientPrefs.data.playOpponent;
+                healthBar.leftToRight = MpMatch.playsOpponent();
                 healthBar.scrollFactor.set();
                 healthBar.visible = !ClientPrefs.data.hideHud;
                 healthBar.alpha = ClientPrefs.data.healthBarAlpha;
@@ -780,7 +782,7 @@ class PlayState extends MusicBeatState
                 botplayTxt.setFormat(Paths.font("vcr.ttf"), 32, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
                 botplayTxt.scrollFactor.set();
                 botplayTxt.borderSize = 1.25;
-                botplayTxt.visible = ClientPrefs.data.playOpponent ? cpuControlled_opponent : cpuControlled;
+                botplayTxt.visible = MpMatch.playsOpponent() ? cpuControlled_opponent : cpuControlled;
                 add(botplayTxt);
                 if (ClientPrefs.data.downScroll)
                         botplayTxt.y = timeBar.y - 78;
@@ -1449,8 +1451,8 @@ class PlayState extends MusicBeatState
                                                         {
                                                                 note.copyAlpha = false;
                                                                 note.alpha = note.multAlpha;
-                                                                if ((ClientPrefs.data.middleScroll && !note.mustPress && !ClientPrefs.data.playOpponent)
-                                                                        || (ClientPrefs.data.middleScroll && note.mustPress && ClientPrefs.data.playOpponent))
+                                                                if ((ClientPrefs.data.middleScroll && !note.mustPress && !MpMatch.playsOpponent())
+                                                                        || (ClientPrefs.data.middleScroll && note.mustPress && MpMatch.playsOpponent()))
                                                                         note.alpha *= 0.35;
                                                         }
                                                 }
@@ -1527,7 +1529,7 @@ class PlayState extends MusicBeatState
                                 daNote.visible = false;
                                 daNote.ignoreNote = true;
 
-                                if (!ClientPrefs.data.lowQuality || ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled)
+                                if (!ClientPrefs.data.lowQuality || MpMatch.playsOpponent() ? !cpuControlled_opponent : !cpuControlled)
                                         daNote.kill();
                                 unspawnNotes.remove(daNote);
                                 daNote.destroy();
@@ -1569,7 +1571,7 @@ class PlayState extends MusicBeatState
 
                 scoreTxtUpdate();
 
-                if (!miss && ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled)
+                if (!miss && MpMatch.playsOpponent() ? !cpuControlled_opponent : !cpuControlled)
                         doScoreBop();
 
                 callOnScripts('onUpdateScore', [miss]);
@@ -1878,7 +1880,7 @@ class PlayState extends MusicBeatState
 
                                 var swagNote:Note = new Note(daStrumTime, daNoteData, oldNote);
                                 var mpMine:Bool = !MpMatch.active || (MpMatch.isHost == gottaHitNote);
-                                swagNote.mustPress = MpMatch.active ? mpMine : gottaHitNote;
+                                swagNote.mustPress = gottaHitNote;
                                 swagNote.mpRemote = MpMatch.active && !mpMine;
                                 swagNote.mpSide = gottaHitNote;
                                 swagNote.sustainLength = songNotes[2];
@@ -2214,7 +2216,7 @@ class PlayState extends MusicBeatState
                 {
                         // FlxG.log.add(i);
                         var targetAlpha:Float = 1;
-                        if (!ClientPrefs.data.playOpponent)
+                        if (!MpMatch.playsOpponent())
                         {
                                 if (player == 0)
                                 {
@@ -2375,7 +2377,7 @@ class PlayState extends MusicBeatState
                                 if (!Controls.instance.pressed(keysArray[key])) {
                                         keyboardViewer.released(key);
                                         
-                                        var spr:StrumNote = ClientPrefs.data.playOpponent ? opponentStrums.members[key] : playerStrums.members[key];
+                                        var spr:StrumNote = MpMatch.playsOpponent() ? opponentStrums.members[key] : playerStrums.members[key];
                                         if (spr != null)
                                         {
                                                 spr.playAnim('static');
@@ -2804,10 +2806,10 @@ class PlayState extends MusicBeatState
                         if (!inCutscene)
                         {
                                 if (!replayMode) {
-                                        if (ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled)
+                                        if (MpMatch.playsOpponent() ? !cpuControlled_opponent : !cpuControlled)
                                                 keysCheck();
                                         else
-                                                ClientPrefs.data.playOpponent ? opponentDance() : playerDance();
+                                                MpMatch.playsOpponent() ? opponentDance() : playerDance();
                                 }
 
                                 if (notes.length > 0)
@@ -2827,7 +2829,7 @@ class PlayState extends MusicBeatState
                                                                 daNote.followStrumNote(strum, fakeCrochet, songSpeed / playbackRate);
                                                                 if (daNote.mustPress)
                                                                 {
-                                                                        if (!ClientPrefs.data.playOpponent)
+                                                                        if (!MpMatch.playsOpponent())
                                                                         {
                                                                                 var canBeHitAt:Bool = replayMode ? (daNote.strumTime > songPosForNotes - (Conductor.safeZoneOffset * daNote.lateHitMult)
                                                                                         && daNote.strumTime < songPosForNotes + (Conductor.safeZoneOffset * daNote.earlyHitMult)) : daNote.canBeHit;
@@ -2842,7 +2844,7 @@ class PlayState extends MusicBeatState
                                                                 }
                                                                 else
                                                                 {
-                                                                        if (!ClientPrefs.data.playOpponent)
+                                                                        if (!MpMatch.playsOpponent())
                                                                         {
                                                                                 if (daNote.wasGoodHit && !daNote.hitByOpponent && !daNote.ignoreNote)
                                                                                         opponentNoteHit(daNote);
@@ -2861,7 +2863,7 @@ class PlayState extends MusicBeatState
                                                                 else if (songPosForNotes - daNote.strumTime > noteKillOffset)
                                                                 {
                                                                         var tooLateAt:Bool = daNote.strumTime < songPosForNotes - Conductor.safeZoneOffset && !daNote.wasGoodHit;
-                                                                        if (((!daNote.mustPress && !cpuControlled_opponent && ClientPrefs.data.playOpponent) || (daNote.mustPress && !cpuControlled && !ClientPrefs.data.playOpponent))
+                                                                        if (((!daNote.mustPress && !cpuControlled_opponent && MpMatch.playsOpponent()) || (daNote.mustPress && !cpuControlled && !MpMatch.playsOpponent()))
                                                                                 && !daNote.ignoreNote && !endingSong && (replayMode ? (tooLateAt || daNote.wasGoodHit == false) : (daNote.tooLate == true || daNote.wasGoodHit == false)) && !daNote.missed)
                                                                                 noteMiss(daNote, i);
                                                                 }
@@ -2984,7 +2986,7 @@ class PlayState extends MusicBeatState
         {
                 scoreTxt.text = "NPS: " + nps + " (Max: " + maxNPS + ")";
 
-                if (ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled)
+                if (MpMatch.playsOpponent() ? !cpuControlled_opponent : !cpuControlled)
                 {
                         scoreTxt.text += " | " + "Score: " + songScore + " | Misses: " + songMisses + " | Accuracy: " + Math.ceil(ratingPercent * 10000) / 100 + '%'
                                 + " | ";
@@ -3036,7 +3038,7 @@ class PlayState extends MusicBeatState
 
                 if (healthBar.percent < 20) // losing
                 {
-                        if (ClientPrefs.data.playOpponent)
+                        if (MpMatch.playsOpponent())
                         {
                                 iconP1.animation.curAnim.curFrame = iconP1.numFrames > 2 ? 2 : 0;
                                 iconP2.animation.curAnim.curFrame = 1;
@@ -3049,7 +3051,7 @@ class PlayState extends MusicBeatState
                 }
                 else if (healthBar.percent > 80) // winning
                 {
-                        if (!ClientPrefs.data.playOpponent)
+                        if (!MpMatch.playsOpponent())
                         {
                                 iconP1.animation.curAnim.curFrame = iconP1.numFrames > 2 ? 2 : 0;
                                 iconP2.animation.curAnim.curFrame = 1;
@@ -3732,7 +3734,7 @@ class PlayState extends MusicBeatState
                         var percent:Float = ratingPercent;
                         if (Math.isNaN(percent))
                                 percent = 0;
-                        if (!ClientPrefs.data.playOpponent && !replayMode)
+                        if (!MpMatch.playsOpponent() && !replayMode)
                         {
                                 var details:Array<Array<Dynamic>> = [
                                         [
@@ -3740,7 +3742,7 @@ class PlayState extends MusicBeatState
                                         ],
                                         [
                                                 songSpeed, playbackRate, healthGain, healthLoss,
-                                                cpuControlled, practiceMode, instakillOnMiss, ClientPrefs.data.playOpponent, 
+                                                cpuControlled, practiceMode, instakillOnMiss, MpMatch.playsOpponent(), 
                                                 ClientPrefs.data.flipChart,
                                         ],
                                         [
@@ -3765,7 +3767,7 @@ class PlayState extends MusicBeatState
                                         cpuControlled: cpuControlled,
                                         practiceMode: practiceMode,
                                         instakillOnMiss: instakillOnMiss,
-                                        playOpponent: ClientPrefs.data.playOpponent,
+                                        playOpponent: MpMatch.playsOpponent(),
                                         flipChart: ClientPrefs.data.flipChart,
                                         songScore: songScore,
                                         ratingPercent: ratingPercent,
@@ -3815,7 +3817,7 @@ class PlayState extends MusicBeatState
 
                                         if (!ClientPrefs.getGameplaySetting('practice')
                                                 && !ClientPrefs.getGameplaySetting('botplay')
-                                                && !ClientPrefs.data.playOpponent)
+                                                && !MpMatch.playsOpponent())
                                         {
                                                 StoryMenuState.weekCompleted.set(WeekData.weeksList[storyWeek], true);
                                                 Highscore.saveWeekScore(WeekData.getWeekFileName(), campaignScore, storyDifficulty);
@@ -4084,7 +4086,7 @@ class PlayState extends MusicBeatState
                                 note.strumTime - Conductor.songPosition + ClientPrefs.data.ratingOffset;
                 }
 
-                if ((ClientPrefs.data.playOpponent && cpuControlled_opponent) || (!ClientPrefs.data.playOpponent && cpuControlled))
+                if ((MpMatch.playsOpponent() && cpuControlled_opponent) || (!MpMatch.playsOpponent() && cpuControlled))
                         noteDiff = 0;
 
                 NoteMs.push(noteDiff / playbackRate);
@@ -4130,11 +4132,12 @@ class PlayState extends MusicBeatState
                 if (daRating.noteSplash && !note.noteSplashData.disabled)
                         spawnNoteSplashOnNote(note);
 
-                if (ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled)
+                if (MpMatch.active && note != null && !note.mpRemote)
+                        MpMatch.reportHit(note);
+
+                if (MpMatch.playsOpponent() ? !cpuControlled_opponent : !cpuControlled)
                 {
                         songScore += score;
-                        if (MpMatch.active && note != null && note.mustPress)
-                                MpMatch.reportHit(note);
                         if (!note.ratingDisabled)
                         {
                                 songHits++;
@@ -4296,9 +4299,9 @@ class PlayState extends MusicBeatState
 
         private function keyPressed(key:Int)
         {
-                if (ClientPrefs.data.playOpponent ? cpuControlled_opponent : cpuControlled || paused || key < 0)
+                if (MpMatch.playsOpponent() ? cpuControlled_opponent : cpuControlled || paused || key < 0)
                         return;
-                var char:Character = ClientPrefs.data.playOpponent ? dad : boyfriend;
+                var char:Character = MpMatch.playsOpponent() ? dad : boyfriend;
                 if (!generatedMusic || endingSong || char.stunned)
                         return;
 
@@ -4320,7 +4323,7 @@ class PlayState extends MusicBeatState
                                 var canBeHitAt:Bool = (n.strumTime > inputSongPos - (Conductor.safeZoneOffset * n.lateHitMult)
                                         && n.strumTime < inputSongPos + (Conductor.safeZoneOffset * n.earlyHitMult));
                                 var canHit:Bool = !strumsBlocked[n.noteData]
-                                        && ((n.mustPress && !ClientPrefs.data.playOpponent) || (!n.mustPress && ClientPrefs.data.playOpponent))
+                                        && ((n.mustPress && !MpMatch.playsOpponent()) || (!n.mustPress && MpMatch.playsOpponent()))
                                         && canBeHitAt
                                         && !tooLateAt
                                         && !n.wasGoodHit
@@ -4376,7 +4379,7 @@ class PlayState extends MusicBeatState
                                         childNote.canHold = true;
                                 }
                         }
-                        if (!ClientPrefs.data.playOpponent)
+                        if (!MpMatch.playsOpponent())
                                 goodNoteHit(funnyNote);
                         else
                                 opponentNoteHitForOpponent(funnyNote);
@@ -4394,7 +4397,7 @@ class PlayState extends MusicBeatState
                                         var canBeHitAt2:Bool = (n2.strumTime > inputSongPos - (Conductor.safeZoneOffset * n2.lateHitMult)
                                                 && n2.strumTime < inputSongPos + (Conductor.safeZoneOffset * n2.earlyHitMult));
                                         var canHit2:Bool = !strumsBlocked[n2.noteData]
-                                                && ((n2.mustPress && !ClientPrefs.data.playOpponent) || (!n2.mustPress && ClientPrefs.data.playOpponent))
+                                                && ((n2.mustPress && !MpMatch.playsOpponent()) || (!n2.mustPress && MpMatch.playsOpponent()))
                                                 && canBeHitAt2
                                                 && !tooLateAt2
                                                 && !n2.wasGoodHit
@@ -4435,7 +4438,7 @@ class PlayState extends MusicBeatState
                 if (!keysPressed.contains(key))
                         keysPressed.push(key);
 
-                var spr:StrumNote = ClientPrefs.data.playOpponent ? opponentStrums.members[key] : playerStrums.members[key];
+                var spr:StrumNote = MpMatch.playsOpponent() ? opponentStrums.members[key] : playerStrums.members[key];
                 if (strumsBlocked[key] != true && spr != null && spr.animation.curAnim.name != 'confirm')
                 {
                         spr.playAnim('pressed');
@@ -4459,11 +4462,11 @@ class PlayState extends MusicBeatState
 
         public function keyReleased(key:Int)
         {
-                if (ClientPrefs.data.playOpponent ? !cpuControlled_opponent : !cpuControlled && startedCountdown && !paused)
+                if (MpMatch.playsOpponent() ? !cpuControlled_opponent : !cpuControlled && startedCountdown && !paused)
                 {
                         keyboardViewer.released(key);
 
-                        var spr:StrumNote = ClientPrefs.data.playOpponent ? opponentStrums.members[key] : playerStrums.members[key];
+                        var spr:StrumNote = MpMatch.playsOpponent() ? opponentStrums.members[key] : playerStrums.members[key];
                         if (spr != null)
                         {
                                 spr.playAnim('static');
@@ -4502,7 +4505,7 @@ class PlayState extends MusicBeatState
                                 if (_press[i] && strumsBlocked[i] != true)
                                         keyPressed(i);
 
-                var char:Character = ClientPrefs.data.playOpponent ? dad : boyfriend;
+                var char:Character = MpMatch.playsOpponent() ? dad : boyfriend;
                 if (startedCountdown && !char.stunned && generatedMusic)
                 {
                         var inputSongPos:Float = frameTime;
@@ -4527,9 +4530,9 @@ class PlayState extends MusicBeatState
                                                         && !daNote.blockHit
                                                         && daNote.canHold)
                                                 {
-                                                        if (daNote.mustPress && !ClientPrefs.data.playOpponent)
+                                                        if (daNote.mustPress && !MpMatch.playsOpponent())
                                                                 goodNoteHit(daNote);
-                                                        if (!daNote.mustPress && ClientPrefs.data.playOpponent)
+                                                        if (!daNote.mustPress && MpMatch.playsOpponent())
                                                                 opponentNoteHitForOpponent(daNote);
                                                 }
                                         }
@@ -4538,7 +4541,7 @@ class PlayState extends MusicBeatState
                         }
 
                         if (!_hold.contains(true) || endingSong)
-                                ClientPrefs.data.playOpponent ? opponentDance() : playerDance();
+                                MpMatch.playsOpponent() ? opponentDance() : playerDance();
                         #if ACHIEVEMENTS_ALLOWED
                         else
                                 checkForAchievement(['oversinging']);
@@ -4567,7 +4570,7 @@ class PlayState extends MusicBeatState
                                 if (_press[i] && strumsBlocked[i] != true)
                                         keyPressed(i);
 
-                var char:Character = ClientPrefs.data.playOpponent ? dad : boyfriend;
+                var char:Character = MpMatch.playsOpponent() ? dad : boyfriend;
                 if (startedCountdown && !char.stunned && generatedMusic)
                 {
                         var inputSongPos:Float = replayMode ? @:privateAccess replayExam.time : Conductor.songPosition;
@@ -4593,9 +4596,9 @@ class PlayState extends MusicBeatState
                                                         && !daNote.blockHit
                                                         && daNote.canHold)
                                                 {
-                                                        if (daNote.mustPress && !ClientPrefs.data.playOpponent)
+                                                        if (daNote.mustPress && !MpMatch.playsOpponent())
                                                                 goodNoteHit(daNote);
-                                                        if (!daNote.mustPress && ClientPrefs.data.playOpponent)
+                                                        if (!daNote.mustPress && MpMatch.playsOpponent())
                                                                 opponentNoteHitForOpponent(daNote);
                                                 }
                                         }
@@ -4604,7 +4607,7 @@ class PlayState extends MusicBeatState
                         }
 
                         if (!_hold.contains(true) || endingSong)
-                                ClientPrefs.data.playOpponent ? opponentDance() : playerDance();
+                                MpMatch.playsOpponent() ? opponentDance() : playerDance();
 
                         #if ACHIEVEMENTS_ALLOWED
                         else
@@ -4620,7 +4623,7 @@ class PlayState extends MusicBeatState
 
         public function noteMiss(daNote:Note, ?index:Int = -1):Void
         { // You didn't hit the key and let it go offscreen, also used by Hurt Notes
-                if (MpMatch.active && daNote != null && daNote.mustPress)
+                if (MpMatch.active && daNote != null && !daNote.mpRemote)
                 {
                         MpMatch.reportMiss(daNote);
                         if (MpMatch.dieOnMiss && !daNote.isSustainNote)
@@ -4643,7 +4646,7 @@ class PlayState extends MusicBeatState
                                         if (note != null && note.exists && note.alive)
                                         {
                                                 if (daNote != note
-                                                        && (!daNote.mustPress && ClientPrefs.data.playOpponent || daNote.mustPress && !ClientPrefs.data.playOpponent)
+                                                        && (!daNote.mustPress && MpMatch.playsOpponent() || daNote.mustPress && !MpMatch.playsOpponent())
                                                         && daNote.noteData == note.noteData
                                                         && daNote.isSustainNote == note.isSustainNote
                                                         && Math.abs(baseTime - note.strumTime) < 1)
@@ -4662,7 +4665,7 @@ class PlayState extends MusicBeatState
                                         if (note != null && note.exists && note.alive)
                                         {
                                                 if (daNote != note
-                                                        && (!daNote.mustPress && ClientPrefs.data.playOpponent || daNote.mustPress && !ClientPrefs.data.playOpponent)
+                                                        && (!daNote.mustPress && MpMatch.playsOpponent() || daNote.mustPress && !MpMatch.playsOpponent())
                                                         && daNote.noteData == note.noteData
                                                         && daNote.isSustainNote == note.isSustainNote
                                                         && Math.abs(daNote.strumTime - note.strumTime) < 1)
@@ -4784,7 +4787,7 @@ class PlayState extends MusicBeatState
                                 callOnHScript('noteMiss', [note]);
                 }
                 // play character anims
-                var char:Character = MpMatch.active && note != null ? (note.mpSide ? boyfriend : dad) : (ClientPrefs.data.playOpponent ? dad : boyfriend);
+                var char:Character = MpMatch.active && note != null ? (note.mpSide ? boyfriend : dad) : (MpMatch.playsOpponent() ? dad : boyfriend);
                 if ((note != null && note.gfNote) || (SONG.notes[curSection] != null && SONG.notes[curSection].gfSection))
                         char = gf;
 
@@ -5018,7 +5021,7 @@ class PlayState extends MusicBeatState
                         callOnHScript('goodNoteHitPre', [note]);
 
                 note.wasGoodHit = true;
-                if (MpMatch.active && note.mustPress && note.isSustainNote)
+                if (MpMatch.active && !note.mpRemote && note.isSustainNote)
                         MpMatch.reportHit(note);
 
                 if (ClientPrefs.data.hitsoundVolume > 0 && !note.hitsoundDisabled)
@@ -5329,7 +5332,7 @@ class PlayState extends MusicBeatState
         {
                 if (note != null)
                 {
-                        var strum:StrumNote = ClientPrefs.data.playOpponent ? opponentStrums.members[note.noteData] : playerStrums.members[note.noteData];
+                        var strum:StrumNote = MpMatch.playsOpponent() ? opponentStrums.members[note.noteData] : playerStrums.members[note.noteData];
                         if (strum != null)
                                 spawnNoteSplash(strum.x, strum.y, note.noteData, note);
                 }
@@ -5776,7 +5779,7 @@ class PlayState extends MusicBeatState
                         return;
 
                 var usedPractice:Bool = (ClientPrefs.getGameplaySetting('practice') || ClientPrefs.getGameplaySetting('botplay'));
-                if (ClientPrefs.data.playOpponent ? cpuControlled_opponent : cpuControlled)
+                if (MpMatch.playsOpponent() ? cpuControlled_opponent : cpuControlled)
                         return;
 
                 for (name in achievesToCheck)

@@ -3,6 +3,7 @@ package games.objects;
 import flixel.FlxBasic;
 
 import general.backend.InputFormatter;
+import general.backend.MpMatch;
 import general.backend.animation.PsychAnimationController;
 
 import general.shaders.RGBPalette;
@@ -204,7 +205,7 @@ class StrumNote extends FlxSprite
 		}
 		else
 		{
-			var controlledPlayer:Int = ClientPrefs.data.playOpponent ? 0 : 1;
+			var controlledPlayer:Int = MpMatch.playsOpponent() ? 0 : 1;
 			if (player == controlledPlayer)
 				x = 640;
 			else

@@ -616,7 +616,7 @@ class Note extends FlxSprite
 
 		if (mustPress)
 		{
-			if (!ClientPrefs.data.playOpponent)
+			if (!MpMatch.playsOpponent())
 			{
 				canBeHit = (strumTime > Conductor.songPosition - (Conductor.safeZoneOffset * lateHitMult)
 					&& strumTime < Conductor.songPosition + (Conductor.safeZoneOffset * earlyHitMult));
@@ -630,14 +630,14 @@ class Note extends FlxSprite
 
 				if (strumTime < Conductor.songPosition + (Conductor.safeZoneOffset * earlyHitMult))
 				{
-					if ((isSustainNote && prevNote.wasGoodHit) || strumTime <= Conductor.songPosition)
+					if ((!mpRemote || MpMatch.opponentName == '') && ((isSustainNote && prevNote.wasGoodHit) || strumTime <= Conductor.songPosition))
 						wasGoodHit = true;
 				}
 			}
 		}
 		else
 		{
-			if (ClientPrefs.data.playOpponent)
+			if (MpMatch.playsOpponent())
 			{
 				canBeHit = (strumTime > Conductor.songPosition - (Conductor.safeZoneOffset * lateHitMult)
 					&& strumTime < Conductor.songPosition + (Conductor.safeZoneOffset * earlyHitMult));

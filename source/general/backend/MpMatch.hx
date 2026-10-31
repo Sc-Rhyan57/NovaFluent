@@ -26,6 +26,14 @@ class MpMatch
 	public static var localName:String = '';
 	public static var opponentName:String = '';
 	public static var active:Bool = false;
+
+	/** Same role as the engine's playOpponent option: in a room the guest plays the opponent side. */
+	public static function playsOpponent():Bool
+	{
+		if (active)
+			return !isHost;
+		return ClientPrefs.data.playOpponent;
+	}
 	public static var returning:Bool = false;
 	public static var dieOnMiss:Bool = false;
 	public static var botplay:Bool = false;
