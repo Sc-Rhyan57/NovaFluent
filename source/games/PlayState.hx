@@ -1458,7 +1458,7 @@ class PlayState extends MusicBeatState
                                                 var note:Note = cast notes.members[i];
                                                 if (note != null && note.exists && note.alive)
                                                 {
-                                                        if (ClientPrefs.data.opponentStrums || note.mustPress)
+                                                        if (ClientPrefs.data.opponentStrums || note.mustPress || MpMatch.active)
                                                         {
                                                                 note.copyAlpha = false;
                                                                 note.alpha = note.multAlpha;
@@ -2223,6 +2223,7 @@ class PlayState extends MusicBeatState
         {
                 var strumLineX:Float = ClientPrefs.data.middleScroll ? STRUM_X_MIDDLESCROLL : STRUM_X;
                 var strumLineY:Float = ClientPrefs.data.downScroll ? (FlxG.height - 150) : 50;
+                var showOpponentStrums:Bool = ClientPrefs.data.opponentStrums || MpMatch.active;
                 for (i in 0...PlayState.SONG.mania + 1)
                 {
                         // FlxG.log.add(i);
@@ -2231,7 +2232,7 @@ class PlayState extends MusicBeatState
                         {
                                 if (player == 0)
                                 {
-                                        if (!ClientPrefs.data.opponentStrums)
+                                        if (!showOpponentStrums)
                                                 targetAlpha = 0;
                                         else if (ClientPrefs.data.middleScroll)
                                                 targetAlpha = 0.35;
@@ -2241,7 +2242,7 @@ class PlayState extends MusicBeatState
                         {
                                 if (player == 1)
                                 {
-                                        if (!ClientPrefs.data.opponentStrums)
+                                        if (!showOpponentStrums)
                                                 targetAlpha = 0;
                                         else if (ClientPrefs.data.middleScroll)
                                                 targetAlpha = 0.35;
@@ -2642,6 +2643,7 @@ class PlayState extends MusicBeatState
                         if (!MpMatch.isHost)
                                 syncRemotePause();
                         MpMatch.placeNameTags(scoreTxt.y);
+                        enforceMpStrums();
                         for (remoteId in MpMatch.takeRemoteHits())
                         {
                                 var remoteNote:Note = MpMatch.remoteNotes.get(remoteId);
@@ -2839,6 +2841,12 @@ class PlayState extends MusicBeatState
                                                                 var strumGroup:FlxTypedGroup<StrumNote> = daNote.mustPress ? playerStrums : opponentStrums;
                                                                 var strum:StrumNote = strumGroup.members[daNote.noteData];
                                                                 daNote.followStrumNote(strum, fakeCrochet, songSpeed / playbackRate);
+                                                                if (MpMatch.active && daNote.noteType == '' && !daNote.wasGoodHit && !daNote.ignoreNote)
+                                                                {
+                                                                        daNote.visible = true;
+                                                                        if (daNote.alpha <= 0.05)
+                                                                                daNote.alpha = daNote.multAlpha * (ClientPrefs.data.middleScroll && daNote.mpRemote ? 0.35 : 1);
+                                                                }
                                                                 if (daNote.mustPress)
                                                                 {
                                                                         if (!MpMatch.playsOpponent())
@@ -3192,7 +3200,7 @@ class PlayState extends MusicBeatState
 
         function doDeathCheck(?skipHealthCheck:Bool = false)
         {
-                if (((skipHealthCheck && instakillOnMiss) || health <= 0) && !practiceMode && !isDead && !replayMode)
+                if (((skipHealthCheck && instakillOnMiss) || health <= 0) && !practiceMode && !isDead && !replayMode && !MpMatch.active)
                 {
                         var ret:Dynamic = callOnScripts('onGameOver', null, true);
                         if (ret != LuaUtils.Function_Stop)
@@ -4642,8 +4650,6 @@ class PlayState extends MusicBeatState
                 if (MpMatch.active && daNote != null && !daNote.mpRemote)
                 {
                         MpMatch.reportMiss(daNote);
-                        if (MpMatch.dieOnMiss && !daNote.isSustainNote)
-                                health = 0;
                 }
                 // Dupe note remove
                 if (notes.length > 0)
@@ -5130,6 +5136,23 @@ class PlayState extends MusicBeatState
                         invalidateNote(note);
         }
 
+        function enforceMpStrums():Void
+        {
+                if (Conductor.songPosition <= 0 || strumLineNotes == null)
+                        return;
+                for (spr in strumLineNotes.members)
+                {
+                        if (spr == null)
+                                continue;
+                        spr.visible = true;
+                        if (spr.alpha <= 0.05)
+                        {
+                                var remoteSide:Bool = MpMatch.playsOpponent() ? spr.player == 1 : spr.player == 0;
+                                spr.alpha = ClientPrefs.data.middleScroll && remoteSide ? 0.35 : 1;
+                        }
+                }
+        }
+
         // Replicates the opponent's note hit on this client's screen.
         // When the opponent (remote player) hits a note, the server broadcasts a
         // "judge" message with mustHit/gf/lane info.  This method:
@@ -5190,14 +5213,7 @@ class PlayState extends MusicBeatState
                         char.holdTimer = 0;
                 }
 
-                // Flash the strum that the note belongs to.
-                var strumGroup:FlxTypedGroup<StrumNote> = isMustHitSide ? playerStrums : opponentStrums;
-                if (strumGroup != null)
-                {
-                        var spr:StrumNote = strumGroup.members[note.noteData];
-                        if (spr != null)
-                                spr.playAnim('confirm', true);
-                }
+                strumPlayAnim(!isMustHitSide, Std.int(Math.abs(note.noteData)), Conductor.stepCrochet * 1.25 / 1000 / playbackRate);
 
                 // Bump vocals so the player hears the voice track for this note.
                 if (!splitVocals && vocals != null)
