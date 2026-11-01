@@ -308,7 +308,10 @@ class MpMatch
 		tagLocal.y = barY;
 		tagRemote.y = barY;
 		if (hud != null)
-			hud.y = barY + 24;
+		{
+			var below:Float = barY + 24;
+			hud.y = below + hud.height > FlxG.height ? Math.max(2, barY - hud.height - 6) : below;
+		}
 	}
 
 	public static function scriptDirs(sub:String):Array<String>
