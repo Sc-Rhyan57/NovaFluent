@@ -68,13 +68,22 @@ class MpManifest
 		return out;
 	}
 
+	static function row(e:ManifestEntry):Array<Dynamic>
+	{
+		var r:Array<Dynamic> = [];
+		r.push(e.p);
+		r.push(e.s);
+		r.push(e.c);
+		return r;
+	}
+
 	public static function parts(entries:Array<ManifestEntry>):Array<Array<Dynamic>>
 	{
 		var out:Array<Array<Dynamic>> = [];
 		var cur:Array<Dynamic> = [];
 		for (e in entries)
 		{
-			cur.push([e.p, e.s, e.c]);
+			cur.push(row(e));
 			if (cur.length >= PART_ENTRIES)
 			{
 				out.push(cur);
@@ -93,7 +102,7 @@ class MpManifest
 			folder: folder,
 			created: Date.now().getTime(),
 			count: entries.length,
-			files: [for (e in entries) [e.p, e.s, e.c]]
+			files: [for (e in entries) row(e)]
 		}));
 	}
 
