@@ -101,6 +101,7 @@ jobs:
       NOVA_GA_GAME_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_GAME_KEY || '' }}
       NOVA_GA_SECRET_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_SECRET_KEY || '' }}
       NOVA_GA_REQUIRED: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '1' || '' }}
+      GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Checkout
@@ -263,6 +264,7 @@ jobs:
       NOVA_GA_GAME_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_GAME_KEY || '' }}
       NOVA_GA_SECRET_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_SECRET_KEY || '' }}
       NOVA_GA_REQUIRED: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '1' || '' }}
+      GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Checkout
@@ -409,6 +411,7 @@ jobs:
       NOVA_GA_GAME_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_GAME_KEY || '' }}
       NOVA_GA_SECRET_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_SECRET_KEY || '' }}
       NOVA_GA_REQUIRED: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '1' || '' }}
+      GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Checkout
