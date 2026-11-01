@@ -97,6 +97,40 @@ class MpModTransfer
 		return out;
 	}
 
+	public static function disableExtras(folder:String, song:String, rels:Array<String>):Int
+	{
+		var root:String = Paths.mods(folder);
+		var songPath:String = Paths.formatToSongPath(song);
+		var loaded:Array<String> = ['scripts/', 'custom_events/', 'custom_notetypes/', 'stages/', 'data/' + songPath + '/', 'songs/' + songPath + '/'];
+		var scriptExt:Array<String> = ['hx', 'hxs', 'hscript', 'lua'];
+		var moved:Int = 0;
+		for (rel in rels)
+		{
+			var lower:String = rel.toLowerCase();
+			if (!isSafe(rel) || scriptExt.indexOf(Path.extension(lower)) == -1 || !inDirs(lower, loaded))
+				continue;
+			var from:String = root + '/' + rel;
+			if (!FileSystem.exists(from) || FileSystem.isDirectory(from))
+				continue;
+			try
+			{
+				var dir:String = root + '/scripts/DONTUSE';
+				mkdirs(dir);
+				var dest:String = dir + '/' + Path.withoutDirectory(rel) + '.disabled';
+				if (FileSystem.exists(dest))
+					dest = dir + '/' + rel.split('/').join('__') + '.disabled';
+				if (FileSystem.exists(dest))
+					FileSystem.deleteFile(dest);
+				FileSystem.rename(from, dest);
+				moved++;
+			}
+			catch (e:Dynamic)
+			{
+			}
+		}
+		return moved;
+	}
+
 	public static function sizeOf(folder:String, rels:Array<String>):Float
 	{
 		var root:String = Paths.mods(folder);
@@ -490,7 +524,7 @@ class MpModTransfer
 		{
 			try
 			{
-				FileSystem.deleteFile(st.root + '/' + partial);
+				FileSystem.deleteFile(st.root + '/' + partial + '.nfpart');
 			}
 			catch (e:Dynamic)
 			{
@@ -560,7 +594,7 @@ class MpModTransfer
 			closeOut(st);
 			var target:String = st.root + '/' + rel;
 			mkdirs(Path.directory(target));
-			st.out = File.write(target, true);
+			st.out = File.write(target + '.nfpart', true);
 			st.outRel = rel;
 			st.stage = stageOf(rel);
 		}
@@ -571,7 +605,11 @@ class MpModTransfer
 
 		if (last)
 		{
+			var done:String = st.root + '/' + rel;
 			closeOut(st);
+			if (FileSystem.exists(done))
+				FileSystem.deleteFile(done);
+			FileSystem.rename(done + '.nfpart', done);
 			st.filesDone++;
 		}
 	}

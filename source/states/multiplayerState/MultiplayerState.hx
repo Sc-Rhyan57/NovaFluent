@@ -411,7 +411,7 @@ class MultiplayerState extends MusicBeatState
                 readyButton = button('room', PX, 580, 230, 56, 'PRONTO', B_PRIMARY, toggleReady);
                 playButton = button('room', PX + 250, 580, 230, 56, 'PLAY', B_SECOND, startMatch);
                 button('room', PX + 500, 580, 260, 56, 'SAIR DA SALA', B_DANGER, leaveRoom);
-                requestButton = button('room', PX + 780, 580, 260, 56, 'BAIXAR MOD', B_SECOND, requestMod);
+                requestButton = button('room', PX + 780, 580, 260, 56, 'SALVAR MOD', B_SECOND, saveMod);
 
                 roomDiffDropdown = dropdown('room', 904, 226, 320, 40, 5, 'DIF', onRoomDiff);
                 roomSongDropdown = dropdown('room', 440, 226, 450, 40, 7, 'MÚSICA', onRoomSong);
@@ -1155,6 +1155,21 @@ class MultiplayerState extends MusicBeatState
                 }
         }
 
+        var savingMod:Bool = false;
+
+        function saveMod():Void
+        {
+                if (socket == null || room == null || isHost || modReady || checking || downloadingNow() || requested)
+                        return;
+                savingMod = true;
+                statusKnown = false;
+                awaitingStatus = false;
+                if (manifestKnown)
+                        checkLocalMod();
+                else
+                        setStatus('Aguardando o host publicar o mod...');
+        }
+
         function requestMod():Void
         {
                 if (socket == null || room == null || isHost || modReady || requested)
@@ -1418,6 +1433,7 @@ class MultiplayerState extends MusicBeatState
         }
 
         var session:Int = 0;
+        var waitingNeeds:Map<String, Bool> = new Map();
 
         function abortTransfers():Void
         {
@@ -1428,6 +1444,7 @@ class MultiplayerState extends MusicBeatState
                 sentTo = new Map();
                 sendTotalTo = new Map();
                 needsOf = new Map();
+                waitingNeeds = new Map();
                 plans = new Map();
                 planning = new Map();
                 requested = false;
@@ -1614,7 +1631,7 @@ class MultiplayerState extends MusicBeatState
                 readyButton.setLabel(myReady ? 'CANCELAR' : 'PRONTO');
                 playButton.show(isHost);
                 playButton.setEnabled(canStart());
-                requestButton.show(!isHost && !modReady && statusKnown && !requested && !downloadingNow() && !checking && !awaitingStatus && roomFolder != BASE_FOLDER);
+                requestButton.show(!isHost && !modReady && !requested && !downloadingNow() && !checking && roomFolder != BASE_FOLDER);
         }
 
         function downloadingNow():Bool
@@ -1648,7 +1665,7 @@ class MultiplayerState extends MusicBeatState
                 {
                         try
                         {
-                                var entries = MpManifest.build(folder, MpModTransfer.select(folder, song, songOnly, opt));
+                                var entries = MpManifest.build(folder, MpModTransfer.select(folder, song, songOnly, opt), true);
                                 MpManifest.save(folder, entries);
                                 events.add({kind: 'hostManifest', parts: MpManifest.parts(entries), count: entries.length});
                         }
@@ -1683,7 +1700,7 @@ class MultiplayerState extends MusicBeatState
                 {
                         try
                         {
-                                var entries = MpManifest.build(folder, null);
+                                var entries = MpManifest.build(folder, null, true);
                                 MpManifest.save(folder, entries);
                                 events.add({kind: 'checked', parts: MpManifest.parts(entries)});
                         }
@@ -1876,19 +1893,30 @@ class MultiplayerState extends MusicBeatState
 
                         case 'manifestReady':
                                 manifestKnown = true;
-                                checkLocalMod();
+                                if (savingMod)
+                                        checkLocalMod();
 
                         case 'modStatus':
                                 if (m.pending == true)
                                 {
                                         manifestKnown = false;
+                                        savingMod = false;
+                                        setStatus('O host ainda não publicou o mod. Tente de novo em instantes.');
                                         return;
                                 }
                                 manifestKnown = true;
                                 awaitingStatus = false;
                                 statusKnown = true;
+                                if (m.extras != null && !isHost && roomFolder != BASE_FOLDER)
+                                {
+                                        var extraList:Array<String> = cast m.extras;
+                                        var disabled:Int = MpModTransfer.disableExtras(roomFolder, Std.string(room.settings.song.name), extraList);
+                                        if (disabled > 0)
+                                                appendChat('* ' + disabled + ' script(s) que o host não tem foram movidos para scripts/DONTUSE');
+                                }
                                 if (m.ok == true)
                                 {
+                                        savingMod = false;
                                         modReady = true;
                                         requested = false;
                                         setProgress(1, 'Mod verificado.');
@@ -1897,6 +1925,11 @@ class MultiplayerState extends MusicBeatState
                                 else
                                 {
                                         modReady = false;
+                                        if (savingMod)
+                                        {
+                                                savingMod = false;
+                                                requestMod();
+                                        }
                                         var example:String = '';
                                         if (m.sample != null)
                                         {
@@ -1904,8 +1937,8 @@ class MultiplayerState extends MusicBeatState
                                                 if (sampleList.length > 0)
                                                         example = ' Ex.: ' + sampleList.slice(0, 3).join(', ');
                                         }
-                                        setProgress(0, 'Faltam ' + m.missing + ' arquivos e ' + m.changed + ' diferem do host.');
-                                        setStatus('Seu mod não confere: faltam ' + m.missing + ' e ' + m.changed + ' diferem.' + example);
+                                        setProgress(0, 'Faltam ' + m.missing + ' arquivos do mod.');
+                                        setStatus('Faltam ' + m.missing + ' arquivos do mod. Baixando só o que falta.' + example);
                                 }
                                 refreshRoomUI();
 
@@ -1919,6 +1952,15 @@ class MultiplayerState extends MusicBeatState
                                                 needsOf.set(who, needsOf.get(who).concat(cast m.files));
                                         else
                                                 needsOf.set(who, cast m.files);
+                                        if (m.last != false && waitingNeeds.exists(who))
+                                        {
+                                                waitingNeeds.remove(who);
+                                                if (m.ok != true)
+                                                {
+                                                        plans.remove(who);
+                                                        ensurePlan(who);
+                                                }
+                                        }
                                 }
 
                         case 'kicked':
@@ -1953,7 +1995,10 @@ class MultiplayerState extends MusicBeatState
                                         var requester:String = Std.string(m.from);
                                         appendChat('* ' + requester + ' pediu o mod');
                                         plans.remove(requester);
-                                        ensurePlan(requester);
+                                        if (needsOf.exists(requester))
+                                                ensurePlan(requester);
+                                        else
+                                                waitingNeeds.set(requester, true);
                                 }
 
                         case 'playerLeft':
