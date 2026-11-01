@@ -50,6 +50,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@main
 
+      - name: Ensure cache release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if ! gh release view build-cache >/dev/null 2>&1; then
+            gh release create build-cache \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --latest=false \
+              --title "Build cache" \
+              --notes "Cache interno dos workflows de build. Não apague."
+          fi
+
       - name: Create Release
         id: create_release
         env:
@@ -130,34 +144,32 @@ jobs:
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore Android haxelibs cache
-        id: android_libs
+      - name: Restore Android cache from release
+        id: release_cache
         if: steps.android_cache.outputs.skip_cache == 'false'
-        uses: actions/cache@v4
-        with:
-          path: |
-            .haxelib
-            ~/haxelib
-          key: haxelib-android-${{ hashFiles('hmm.json') }}-${{ github.run_id }}
-          restore-keys: |
-            haxelib-android-${{ hashFiles('hmm.json') }}-
-
-      - name: Restore Android native build cache
-        id: android_native
-        if: steps.android_cache.outputs.skip_cache == 'false'
-        uses: actions/cache@v4
-        with:
-          path: |
-            export/release/android/obj
-            export/release/android/bin/app/build/intermediates/cxx
-          key: native-android-${{ hashFiles('Project.xml', 'hmm.json', 'source/**') }}-${{ github.run_id }}
-          restore-keys: |
-            native-android-
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          HASH=$(shasum -a 256 hmm.json | cut -c1-12)
+          mkdir -p /tmp/rc
+          if gh release download build-cache --pattern "haxelib-android-$HASH.tar.zst.part-*" --dir /tmp/rc 2>/dev/null; then
+            cat /tmp/rc/haxelib-android-$HASH.tar.zst.part-* | zstd -d | tar -x -C /
+            echo "haxelib_hit=true" >> $GITHUB_OUTPUT
+            echo "haxelibs restaurados da release build-cache."
+          else
+            echo "haxelib_hit=false" >> $GITHUB_OUTPUT
+            echo "nenhum cache de haxelibs na release para hmm.json $HASH."
+          fi
+          if gh release download build-cache --pattern "native-android.tar.zst" --dir /tmp/rc 2>/dev/null; then
+            zstd -d < /tmp/rc/native-android.tar.zst | tar -x -C /
+            echo "cache nativo restaurado da release build-cache."
+          fi
+          rm -rf /tmp/rc
 
       - name: Install Android Libraries
         run: |
           haxelib setup ~/haxelib
-          if [ -z "${{ steps.android_libs.outputs.cache-matched-key }}" ] || [ "${{ steps.android_cache.outputs.skip_cache }}" == "true" ]; then
+          if [ "${{ steps.release_cache.outputs.haxelib_hit }}" != "true" ] || [ "${{ steps.android_cache.outputs.skip_cache }}" == "true" ]; then
             haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
             haxelib --global run hmm install
             for library in polymod thx.core thx.semver FlxPartialSound; do
@@ -177,6 +189,21 @@ jobs:
             fi
           fi
 
+      - name: Save Android haxelibs cache to release
+        if: ${{ success() && github.event_name != 'pull_request' && (steps.release_cache.outputs.haxelib_hit != 'true' || steps.android_cache.outputs.update_libs == 'true') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          HASH=$(shasum -a 256 hmm.json | cut -c1-12)
+          mkdir -p /tmp/sc && cd /tmp/sc
+          rm -f ./*
+          tar -C / -cf - "${GITHUB_WORKSPACE#/}/.haxelib" "${HOME#/}/haxelib" | zstd -T0 -3 | split -b 1900m - "haxelib-android-$HASH.tar.zst.part-"
+          for old in $(gh release view build-cache --json assets --jq ".assets[].name | select(startswith(\"haxelib-android-$HASH.tar.zst.part-\"))"); do
+            gh release delete-asset build-cache "$old" --yes
+          done
+          gh release upload build-cache ./haxelib-android-"$HASH".tar.zst.part-* --clobber
+          rm -rf /tmp/sc
+
       - name: Configure Android
         run: |
           haxelib run lime config ANDROID_SDK $ANDROID_HOME
@@ -190,6 +217,9 @@ jobs:
           CURRENT_VERSION=$(sed -n 's/.*build-number="\([^"]*\)".*/\1/p' Project.xml)
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
+      - name: Clean Gradle build output
+        run: rm -rf export/release/android/bin/app/build
+
       - name: Compile Android
         run: |
           COMMIT_SHA=$(git rev-parse --short HEAD)
@@ -200,6 +230,16 @@ jobs:
             haxelib run lime build android -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$NEW_VERSION
           else
             haxelib run lime build android -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$CURRENT_VERSION
+          fi
+
+      - name: Save Android native cache to release
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -d export/release/android/obj ]; then
+            tar -C / -cf - "${GITHUB_WORKSPACE#/}/export/release/android/obj" | zstd -T0 -3 > /tmp/native-android.tar.zst
+            gh release upload build-cache /tmp/native-android.tar.zst --clobber
           fi
 
       - name: Upload APK to Release
@@ -259,33 +299,32 @@ jobs:
             echo "update_libs=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Restore iOS haxelibs cache
-        id: ios_libs
+      - name: Restore iOS cache from release
+        id: release_cache
         if: steps.ios_cache.outputs.skip_cache == 'false'
-        uses: actions/cache@v4
-        with:
-          path: |
-            .haxelib
-            ~/haxelib
-          key: haxelib-ios-${{ hashFiles('hmm.json') }}-${{ github.run_id }}
-          restore-keys: |
-            haxelib-ios-${{ hashFiles('hmm.json') }}-
-
-      - name: Restore iOS native build cache
-        id: ios_native
-        if: steps.ios_cache.outputs.skip_cache == 'false'
-        uses: actions/cache@v4
-        with:
-          path: |
-            export/release/ios/obj
-          key: native-ios-${{ hashFiles('Project.xml', 'hmm.json', 'source/**') }}-${{ github.run_id }}
-          restore-keys: |
-            native-ios-
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          HASH=$(shasum -a 256 hmm.json | cut -c1-12)
+          mkdir -p /tmp/rc
+          if gh release download build-cache --pattern "haxelib-ios-$HASH.tar.zst.part-*" --dir /tmp/rc 2>/dev/null; then
+            cat /tmp/rc/haxelib-ios-$HASH.tar.zst.part-* | zstd -d | tar -x -C /
+            echo "haxelib_hit=true" >> $GITHUB_OUTPUT
+            echo "haxelibs restaurados da release build-cache."
+          else
+            echo "haxelib_hit=false" >> $GITHUB_OUTPUT
+            echo "nenhum cache de haxelibs na release para hmm.json $HASH."
+          fi
+          if gh release download build-cache --pattern "native-ios.tar.zst" --dir /tmp/rc 2>/dev/null; then
+            zstd -d < /tmp/rc/native-ios.tar.zst | tar -x -C /
+            echo "cache nativo restaurado da release build-cache."
+          fi
+          rm -rf /tmp/rc
 
       - name: Install iOS Libraries
         run: |
           haxelib setup ~/haxelib
-          if [ -z "${{ steps.ios_libs.outputs.cache-matched-key }}" ] || [ "${{ steps.ios_cache.outputs.skip_cache }}" == "true" ]; then
+          if [ "${{ steps.release_cache.outputs.haxelib_hit }}" != "true" ] || [ "${{ steps.ios_cache.outputs.skip_cache }}" == "true" ]; then
             haxelib --global git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
             haxelib --global run hmm install
             for library in polymod thx.core thx.semver FlxPartialSound; do
@@ -308,8 +347,33 @@ jobs:
           echo "lime revision: $(git -C .haxelib/lime/git rev-parse HEAD)"
           echo "openfl revision: $(git -C .haxelib/openfl/git rev-parse HEAD)"
 
+      - name: Save iOS haxelibs cache to release
+        if: ${{ success() && github.event_name != 'pull_request' && (steps.release_cache.outputs.haxelib_hit != 'true' || steps.ios_cache.outputs.update_libs == 'true') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          HASH=$(shasum -a 256 hmm.json | cut -c1-12)
+          mkdir -p /tmp/sc && cd /tmp/sc
+          rm -f ./*
+          tar -C / -cf - "${GITHUB_WORKSPACE#/}/.haxelib" "${HOME#/}/haxelib" | zstd -T0 -3 | split -b 1900m - "haxelib-ios-$HASH.tar.zst.part-"
+          for old in $(gh release view build-cache --json assets --jq ".assets[].name | select(startswith(\"haxelib-ios-$HASH.tar.zst.part-\"))"); do
+            gh release delete-asset build-cache "$old" --yes
+          done
+          gh release upload build-cache ./haxelib-ios-"$HASH".tar.zst.part-* --clobber
+          rm -rf /tmp/sc
+
       - name: Compile iOS
         run: haxelib run lime build ios -arm64 -nosign -Dcommit_sha=$(git rev-parse --short HEAD)
+
+      - name: Save iOS native cache to release
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -d export/release/ios/obj ]; then
+            tar -C / -cf - "${GITHUB_WORKSPACE#/}/export/release/ios/obj" | zstd -T0 -3 > /tmp/native-ios.tar.zst
+            gh release upload build-cache /tmp/native-ios.tar.zst --clobber
+          fi
 
       - name: Make IPA And iOS Zip
         run: |
