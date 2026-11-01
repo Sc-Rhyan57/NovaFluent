@@ -1665,7 +1665,7 @@ class MultiplayerState extends MusicBeatState
                 {
                         try
                         {
-                                var entries = MpManifest.build(folder, MpModTransfer.select(folder, song, songOnly, opt), true);
+                                var entries = MpManifest.build(folder, MpModTransfer.select(folder, song, songOnly, opt));
                                 MpManifest.save(folder, entries);
                                 events.add({kind: 'hostManifest', parts: MpManifest.parts(entries), count: entries.length});
                         }
@@ -1700,7 +1700,7 @@ class MultiplayerState extends MusicBeatState
                 {
                         try
                         {
-                                var entries = MpManifest.build(folder, null, true);
+                                var entries = MpManifest.build(folder, null);
                                 MpManifest.save(folder, entries);
                                 events.add({kind: 'checked', parts: MpManifest.parts(entries)});
                         }
@@ -1907,13 +1907,6 @@ class MultiplayerState extends MusicBeatState
                                 manifestKnown = true;
                                 awaitingStatus = false;
                                 statusKnown = true;
-                                if (m.extras != null && !isHost && roomFolder != BASE_FOLDER)
-                                {
-                                        var extraList:Array<String> = cast m.extras;
-                                        var disabled:Int = MpModTransfer.disableExtras(roomFolder, Std.string(room.settings.song.name), extraList);
-                                        if (disabled > 0)
-                                                appendChat('* ' + disabled + ' script(s) que o host não tem foram movidos para scripts/DONTUSE');
-                                }
                                 if (m.ok == true)
                                 {
                                         savingMod = false;
