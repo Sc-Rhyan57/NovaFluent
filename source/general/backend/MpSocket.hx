@@ -17,6 +17,10 @@ class MpSocket
 	public var inbox:Deque<Dynamic> = new Deque();
 	public var open:Bool = false;
 	public var rtt:Float = -1;
+	public var offset:Float = 0;
+	var offsetRtt:Float = 1e12;
+	var syncLeft:Int = 6;
+	var lastSync:Float = 0;
 
 	var ws:Dynamic;
 	var outbox:Array<String> = [];
@@ -96,6 +100,11 @@ class MpSocket
 			closedSent = true;
 			inbox.add({type: '_close'});
 		};
+	}
+
+	public function localTime(serverMs:Float):Float
+	{
+		return serverMs - offset;
 	}
 
 	public function send(obj:Dynamic):Void
@@ -193,6 +202,11 @@ class MpSocket
 			return;
 		var sent:Float = msg.t;
 		rtt = Timer.stamp() * 1000 - sent;
+		if (msg.ts != null && rtt >= 0 && rtt < offsetRtt)
+		{
+			offsetRtt = rtt;
+			offset = Std.parseFloat(Std.string(msg.ts)) - (sent + rtt / 2);
+		}
 	}
 
 	static function frame():Void
@@ -225,6 +239,12 @@ class MpSocket
 		}
 		if (!open)
 			return;
+		if (syncLeft > 0 && now - lastSync > 0.2)
+		{
+			lastSync = now;
+			syncLeft--;
+			rawSend(Json.stringify({type: 'ping', t: now * 1000}));
+		}
 		if (now - lastPing < PING_EVERY)
 			return;
 		lastPing = now;

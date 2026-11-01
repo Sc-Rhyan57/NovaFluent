@@ -718,6 +718,10 @@ class PlayState extends MusicBeatState
                         mpHud.cameras = [camHUD];
                         mpHud.visible = !ClientPrefs.data.hideHud;
                         add(mpHud);
+                        var mpCorner:FlxText = MpMatch.createCorner();
+                        mpCorner.cameras = [camHUD];
+                        mpCorner.visible = !ClientPrefs.data.hideHud;
+                        add(mpCorner);
                         for (tag in MpMatch.createNameTags())
                         {
                                 tag.cameras = [camHUD];
@@ -2533,6 +2537,17 @@ class PlayState extends MusicBeatState
         var mpAllLoaded:Bool = false;
         var mpLoadedPlayers:Map<String, Bool> = new Map<String, Bool>();
         var mpSentLoaded:Bool = false;
+        var mpGoAtLocal:Float = 0;
+        var mpLeaving:Bool = false;
+
+        function leaveMatchToLobby():Void
+        {
+                if (mpLeaving)
+                        return;
+                mpLeaving = true;
+                killVideoCutscene();
+                MusicBeatState.switchState(new MultiplayerState());
+        }
         var remoteJudgements:Map<String, Dynamic> = new Map<String, Dynamic>();
 
         override function handleInput(elapsed:Float)
@@ -2599,6 +2614,12 @@ class PlayState extends MusicBeatState
                                         else if (t == 'allLoaded')
                                         {
                                                 mpAllLoaded = true;
+                                                try
+                                                {
+                                                        if (msg.goAt != null && MpMatch.socket != null)
+                                                                mpGoAtLocal = MpMatch.socket.localTime(Std.parseFloat(Std.string(msg.goAt)));
+                                                }
+                                                catch (e:Dynamic) {}
                                         }
                                         else if (t == 'judge' && MpMatch.active)
                                         {
@@ -2632,7 +2653,12 @@ class PlayState extends MusicBeatState
                         return;
                 }
                 // Release the countdown gate once every player reported loaded.
-                if (mpWaitingForLoad && mpAllLoaded)
+                if (MpMatch.returning && !mpLeaving && !MpMatch.aborted)
+                {
+                        leaveMatchToLobby();
+                        return;
+                }
+                if (mpWaitingForLoad && mpAllLoaded && (mpGoAtLocal <= 0 || Date.now().getTime() >= mpGoAtLocal))
                 {
                         mpWaitingForLoad = false;
                         try { startCallback(); } catch(e:Dynamic) {}
@@ -3698,10 +3724,10 @@ class PlayState extends MusicBeatState
         {
                 if (mobileControls != null)
                         mobileControls.visible = false;
-                if (MpMatch.active)
+                if (MpMatch.active || MpMatch.returning)
                 {
                         MpMatch.finish();
-                        MusicBeatState.switchState(new MultiplayerState());
+                        leaveMatchToLobby();
                         return false;
                 }
                 // Should kill you if you tried to cheat

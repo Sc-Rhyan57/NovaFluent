@@ -59,6 +59,7 @@ class MpMatch
 	static var remoteHits:Array<String> = [];
 	static var stats:Map<String, Dynamic> = new Map();
 	static var hud:FlxText = null;
+	static var corner:FlxText = null;
 	static var tagLocal:FlxText = null;
 	static var tagRemote:FlxText = null;
 	static var overlayBg:FlxSprite = null;
@@ -341,11 +342,11 @@ class MpMatch
 
 	public static function finish():Void
 	{
+		if (active && socket != null)
+			socket.send({type: 'finished'});
 		active = false;
 		returning = true;
 		remotePaused = false;
-		if (isHost && socket != null)
-			socket.send({type: 'end'});
 	}
 
 	public static function exit():Void
@@ -366,6 +367,7 @@ class MpMatch
 		remoteHits = [];
 		remoteNotes = new Map();
 		notices = [];
+		corner = null;
 		scriptPaths = [];
 		chartEntries = [];
 		chartPool = new Map();
@@ -389,19 +391,37 @@ class MpMatch
 		return hud;
 	}
 
+	public static function createCorner():FlxText
+	{
+		corner = new FlxText(8, ClientPrefs.data.downScroll ? 70 : FlxG.height - 230, 220, '', 15);
+		corner.scrollFactor.set();
+		corner.setBorderStyle(flixel.text.FlxText.FlxTextBorderStyle.OUTLINE, 0xFF000000, 1.5);
+		refreshCorner();
+		return corner;
+	}
+
+	static function cornerBlock(name:String):String
+	{
+		var st:Dynamic = stats.get(name);
+		var errors:Dynamic = st == null ? 0 : Reflect.field(st, 'errors');
+		var combo:Dynamic = st == null ? 0 : Reflect.field(st, 'combo');
+		var score:Dynamic = st == null ? 0 : Reflect.field(st, 'score');
+		return '[ ' + name.toUpperCase() + ' ]\nERRORS: ' + errors + '\nCOMBOS: ' + combo + '\nPTS: ' + score;
+	}
+
+	public static function refreshCorner():Void
+	{
+		if (corner == null)
+			return;
+		corner.text = cornerBlock(localName) + '\n\n' + cornerBlock(opponentName == '' ? 'ESPERANDO' : opponentName);
+	}
+
 	public static function refreshHud():Void
 	{
+		refreshCorner();
 		if (hud == null)
 			return;
-		var parts:Array<String> = [];
-		for (name in stats.keys())
-		{
-			var st:Dynamic = stats.get(name);
-			var acc:Float = Math.round(Reflect.field(st, 'accuracy') * 10000) / 100;
-			var mark:String = Reflect.field(st, 'dead') == true ? ' [MORTO]' : '';
-			parts.push(name + ': ' + Reflect.field(st, 'score') + ' (' + acc + '%)' + mark);
-		}
-		var lines:Array<String> = [parts.join('   |   ')];
+		var lines:Array<String> = [];
 		for (n in notices)
 			lines.push('! ' + n);
 		hud.text = lines.join('\n');
@@ -425,7 +445,7 @@ class MpMatch
 		{
 			case 'judge':
 				var who:String = Std.string(m.u);
-				stats.set(who, {score: m.s, combo: m.c, maxCombo: m.m, accuracy: m.a, dead: m.d == 1});
+				stats.set(who, {score: m.s, combo: m.c, maxCombo: m.m, accuracy: m.a, dead: m.d == 1, errors: m.x == null ? 0 : m.x});
 				if (who != localName && Std.string(m.j) != 'miss')
 					remoteHits.push(Std.string(m.n));
 				refreshHud();
@@ -441,6 +461,13 @@ class MpMatch
 				while (notices.length > 3)
 					notices.shift();
 				refreshHud();
+
+			case 'kicked':
+				abortWith(Std.string(m.reason));
+				active = false;
+				returning = false;
+				remotePaused = false;
+				room = null;
 
 			case 'paused':
 				remotePaused = Std.string(m.by) != localName;

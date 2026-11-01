@@ -53,6 +53,11 @@ class MpModTransfer
 	static final PART_BYTES:Int = 1024 * 1024;
 	static final SCRIPT_EXT:Array<String> = ['hx', 'hxs', 'hscript', 'lua', 'frag', 'vert', 'glsl'];
 	static final DATA_EXT:Array<String> = ['json', 'xml', 'txt', 'csv', 'tsv', 'ini', 'lang'];
+	static final MEDIA_EXT:Array<String> = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'ogg', 'mp3', 'wav', 'flac'];
+	static final KNOWN_EXT:Array<String> = [
+		'png', 'jpg', 'jpeg', 'xml', 'json', 'ogg', 'mp3', 'wav', 'mp4', 'webm', 'txt', 'lua', 'hx', 'frag', 'vert', 'ttf', 'otf', 'mov', 'avi', 'mkv', 'flac'
+	];
+	static final ALWAYS_DIRS:Array<String> = ['scripts/', 'weeks/', 'custom_events/', 'custom_notetypes/'];
 
 	public static function folderSize(folder:String):Float
 	{
@@ -65,7 +70,234 @@ class MpModTransfer
 		return total;
 	}
 
-	public static function plan(folder:String):ModPlan
+	public static function select(folder:String, song:String, songOnly:Bool, optimize:Bool):Array<String>
+	{
+		var root:String = Paths.mods(folder);
+		var dirs:Array<String> = [];
+		var files:Array<ModEntry> = [];
+		collect(root, '', dirs, files);
+		var all:Array<String> = [for (f in files) f.rel];
+		if (!songOnly && !optimize)
+			return all;
+		var songPath:String = Paths.formatToSongPath(song);
+		var tokens:Map<String, Bool> = assetTokens(root, songPath, files);
+		var songDirs:Array<String> = ['data/' + songPath + '/', 'songs/' + songPath + '/'];
+		var out:Array<String> = [];
+		for (rel in all)
+		{
+			var lower:String = rel.toLowerCase();
+			if (isAlways(lower) || inDirs(lower, songDirs) || matchesToken(lower, tokens))
+			{
+				out.push(rel);
+				continue;
+			}
+			if (!songOnly && MEDIA_EXT.indexOf(Path.extension(lower)) == -1)
+				out.push(rel);
+		}
+		return out;
+	}
+
+	public static function sizeOf(folder:String, rels:Array<String>):Float
+	{
+		var root:String = Paths.mods(folder);
+		var total:Float = 0;
+		for (r in rels)
+		{
+			var full:String = root + '/' + r;
+			if (FileSystem.exists(full) && !FileSystem.isDirectory(full))
+				total += FileSystem.stat(full).size;
+		}
+		return total;
+	}
+
+	static function isAlways(lower:String):Bool
+	{
+		if (lower.indexOf('/') == -1)
+			return true;
+		for (d in ALWAYS_DIRS)
+			if (StringTools.startsWith(lower, d))
+				return true;
+		return false;
+	}
+
+	static function inDirs(lower:String, dirs:Array<String>):Bool
+	{
+		for (d in dirs)
+			if (StringTools.startsWith(lower, d))
+				return true;
+		return false;
+	}
+
+	static function matchesToken(lower:String, tokens:Map<String, Bool>):Bool
+	{
+		var noExt:String = Path.extension(lower) == '' ? lower : Path.withoutExtension(lower);
+		var segs:Array<String> = noExt.split('/');
+		for (i in 0...segs.length)
+			if (tokens.exists(segs.slice(i).join('/')))
+				return true;
+		return false;
+	}
+
+	static function norm(raw:String):String
+	{
+		var t:String = StringTools.trim(raw).toLowerCase().split('\\').join('/');
+		while (StringTools.startsWith(t, './'))
+			t = t.substr(2);
+		while (StringTools.startsWith(t, '/'))
+			t = t.substr(1);
+		var ext:String = Path.extension(t);
+		if (ext != '' && KNOWN_EXT.indexOf(ext) != -1)
+			t = Path.withoutExtension(t);
+		return t;
+	}
+
+	static function addToken(tokens:Map<String, Bool>, raw:String):Void
+	{
+		var t:String = norm(raw);
+		if (t.length < 2 || t.length > 120 || !Math.isNaN(Std.parseFloat(t)))
+			return;
+		tokens.set(t, true);
+	}
+
+	static function walk(v:Dynamic, tokens:Map<String, Bool>, depth:Int = 0):Void
+	{
+		if (v == null || depth > 24)
+			return;
+		if (Std.isOfType(v, String))
+		{
+			addToken(tokens, cast v);
+			return;
+		}
+		if (Std.isOfType(v, Array))
+		{
+			var list:Array<Dynamic> = cast v;
+			for (item in list)
+				walk(item, tokens, depth + 1);
+			return;
+		}
+		if (Reflect.isObject(v))
+			for (k in Reflect.fields(v))
+				walk(Reflect.field(v, k), tokens, depth + 1);
+	}
+
+	static function readJson(path:String):Dynamic
+	{
+		try
+		{
+			var text:String = File.getContent(path);
+			if (text.length > 0 && text.charCodeAt(0) == 0xFEFF)
+				text = text.substr(1);
+			return Json.parse(text);
+		}
+		catch (e:Dynamic)
+		{
+			return null;
+		}
+	}
+
+	static function scanLua(path:String, tokens:Map<String, Bool>):Void
+	{
+		try
+		{
+			var re:EReg = ~/["']([^"'\r\n]{2,120})["']/g;
+			re.map(File.getContent(path), function(r:EReg):String
+			{
+				addToken(tokens, r.matched(1));
+				return '';
+			});
+		}
+		catch (e:Dynamic)
+		{
+		}
+	}
+
+	static function assetTokens(root:String, songPath:String, files:Array<ModEntry>):Map<String, Bool>
+	{
+		var tokens:Map<String, Bool> = new Map();
+		var lowerMap:Map<String, String> = new Map();
+		for (f in files)
+			lowerMap.set(f.rel.toLowerCase(), f.rel);
+
+		var stage:String = 'stage';
+		var chars:Array<String> = [];
+		var songPrefix:String = 'data/' + songPath + '/';
+
+		for (f in files)
+		{
+			var lower:String = f.rel.toLowerCase();
+			var ext:String = Path.extension(lower);
+			var inSong:Bool = StringTools.startsWith(lower, songPrefix);
+			if (inSong && ext == 'json')
+			{
+				var data:Dynamic = readJson(root + '/' + f.rel);
+				if (data == null)
+					continue;
+				walk(data, tokens);
+				var song:Dynamic = Reflect.field(data, 'song');
+				if (song == null || Std.isOfType(song, String))
+					song = data;
+				var st:Dynamic = Reflect.field(song, 'stage');
+				if (st != null)
+					stage = Std.string(st);
+				for (k in ['player1', 'player2', 'player3', 'gfVersion'])
+				{
+					var v:Dynamic = Reflect.field(song, k);
+					if (v != null)
+						chars.push(Std.string(v));
+				}
+			}
+			if (ext == 'lua' && (inSong || StringTools.startsWith(lower, 'scripts/') || StringTools.startsWith(lower, 'custom_events/')
+				|| StringTools.startsWith(lower, 'custom_notetypes/')))
+				scanLua(root + '/' + f.rel, tokens);
+		}
+
+		addToken(tokens, stage);
+		var stageJson:String = lowerMap.get('stages/' + stage.toLowerCase() + '.json');
+		if (stageJson != null)
+			walk(readJson(root + '/' + stageJson), tokens);
+		var stageLua:String = lowerMap.get('stages/' + stage.toLowerCase() + '.lua');
+		if (stageLua != null)
+			scanLua(root + '/' + stageLua, tokens);
+
+		for (c in chars)
+		{
+			addToken(tokens, c);
+			var cj:String = lowerMap.get('characters/' + c.toLowerCase() + '.json');
+			if (cj == null)
+				continue;
+			var cdata:Dynamic = readJson(root + '/' + cj);
+			walk(cdata, tokens);
+			var icon:Dynamic = cdata == null ? null : Reflect.field(cdata, 'healthicon');
+			if (icon != null)
+			{
+				addToken(tokens, 'icons/icon-' + Std.string(icon));
+				addToken(tokens, 'icons/' + Std.string(icon));
+			}
+		}
+
+		for (f in files)
+		{
+			var lower:String = f.rel.toLowerCase();
+			if (!StringTools.startsWith(lower, 'weeks/') || Path.extension(lower) != 'json')
+				continue;
+			var week:Dynamic = readJson(root + '/' + f.rel);
+			if (week == null || !Reflect.hasField(week, 'songs'))
+				continue;
+			var songs:Array<Dynamic> = cast Reflect.field(week, 'songs');
+			for (entry in songs)
+			{
+				var e:Array<Dynamic> = cast entry;
+				if (e != null && e.length > 1 && Paths.formatToSongPath(Std.string(e[0])) == songPath)
+				{
+					addToken(tokens, 'icons/icon-' + Std.string(e[1]));
+					addToken(tokens, 'icons/' + Std.string(e[1]));
+				}
+			}
+		}
+		return tokens;
+	}
+
+	public static function plan(folder:String, ?keep:Array<String>):ModPlan
 	{
 		var root:String = Paths.mods(folder);
 		if (!FileSystem.exists(root))
@@ -74,6 +306,29 @@ class MpModTransfer
 		var dirs:Array<String> = [];
 		var files:Array<ModEntry> = [];
 		collect(root, '', dirs, files);
+		if (keep != null)
+		{
+			var keepSet:Map<String, Bool> = new Map();
+			for (k in keep)
+				keepSet.set(k, true);
+			files = files.filter(function(f:ModEntry):Bool return keepSet.exists(f.rel));
+			var seen:Map<String, Bool> = new Map();
+			dirs = [];
+			for (f in files)
+			{
+				var parts:Array<String> = f.rel.split('/');
+				var cur:String = '';
+				for (i in 0...parts.length - 1)
+				{
+					cur = cur == '' ? parts[i] : cur + '/' + parts[i];
+					if (!seen.exists(cur))
+					{
+						seen.set(cur, true);
+						dirs.push(cur);
+					}
+				}
+			}
+		}
 		dirs.sort(compareText);
 		files.sort(function(a:ModEntry, b:ModEntry):Int return a.stage != b.stage ? a.stage - b.stage : compareText(a.rel, b.rel));
 
@@ -210,7 +465,18 @@ class MpModTransfer
 			error = Std.string(e);
 		}
 
+		var partial:String = st.outRel;
 		closeOut(st);
+		if (error != null && partial != null)
+		{
+			try
+			{
+				FileSystem.deleteFile(st.root + '/' + partial);
+			}
+			catch (e:Dynamic)
+			{
+			}
+		}
 		if (error == null)
 			events.add({kind: 'modDone', ok: true});
 		else
