@@ -149,6 +149,7 @@ class MultiplayerState extends MusicBeatState
         var pendingStart:Bool = false;
         var startAt:Float = 0;
         var startAtLocal:Float = 0;
+        var requestWait:Float = 0;
 
         var estimateText:FlxText;
         var modDropdown:MpDropdown;
@@ -454,6 +455,25 @@ class MultiplayerState extends MusicBeatState
                         ev = events.pop(false);
                 }
 
+                if (requested && incomingQueue == null)
+                {
+                        requestWait += elapsed;
+                        if (requestWait > 20)
+                        {
+                                requested = false;
+                                requestWait = 0;
+                                setStatus('O host não respondeu. Clique em BAIXAR MOD para tentar de novo.');
+                                refreshRoomUI();
+                        }
+                }
+                else
+                        requestWait = 0;
+
+                for (entry in buttons)
+                        entry.btn.hover();
+                for (d in dropdowns)
+                        d.dd.hover();
+
                 var s:MpSocket = socket;
                 if (s != null)
                 {
@@ -684,6 +704,8 @@ class MultiplayerState extends MusicBeatState
                 catch (e:Dynamic)
                 {
                 }
+                if (availableMods.length > 1)
+                        modIndex = 1;
                 var p:PendingSong = MpMatch.pendingSong;
                 if (p != null && p.mod != null && p.mod != '')
                 {
@@ -739,7 +761,7 @@ class MultiplayerState extends MusicBeatState
 
         function refreshCreateSongs():Void
         {
-                modDropdown.setOptions(availableMods, modIndex);
+                modDropdown.setOptions([for (m in availableMods) m == BASE_FOLDER ? 'JOGO BASE (sem mod)' : m], modIndex);
                 createSongs = ensureSongs(createFolder());
                 if (createSongIdx >= createSongs.length)
                         createSongIdx = 0;
@@ -949,13 +971,8 @@ class MultiplayerState extends MusicBeatState
         function songAvailable(modDir:String, name:String):Bool
         {
                 var folder:String = Paths.formatToSongPath(name);
-                var dirs:Array<String> = [Paths.getSharedPath('data/' + folder)];
-                if (modDir != '')
-                        dirs.push(Paths.mods(modDir + '/data/' + folder));
-                for (d in dirs)
-                        if (FileSystem.exists(d) && FileSystem.isDirectory(d))
-                                return true;
-                return false;
+                var d:String = modDir == '' ? Paths.getSharedPath('data/' + folder) : Paths.mods(modDir + '/data/' + folder);
+                return FileSystem.exists(d) && FileSystem.isDirectory(d);
         }
 
         function songsOfMod(modDir:String):Array<String>
@@ -971,6 +988,8 @@ class MultiplayerState extends MusicBeatState
                         {
                                 var leWeek:WeekData = WeekData.weeksLoaded.get(w);
                                 if (leWeek == null || leWeek.songs == null)
+                                        continue;
+                                if (leWeek.folder != modDir)
                                         continue;
                                 for (song in leWeek.songs)
                                 {
@@ -1114,6 +1133,7 @@ class MultiplayerState extends MusicBeatState
                 if (socket == null || room == null || isHost || modReady || requested)
                         return;
                 requested = true;
+                requestWait = 0;
                 socket.send({type: 'modRequest'});
                 setStatus('Pedido enviado. Aguardando o host enviar o mod...');
                 refreshRoomUI();
@@ -1520,7 +1540,12 @@ class MultiplayerState extends MusicBeatState
                 readyButton.setLabel(myReady ? 'CANCELAR' : 'PRONTO');
                 playButton.show(isHost);
                 playButton.setEnabled(canStart());
-                requestButton.show(!isHost && !modReady && manifestKnown && !requested && !checking && roomFolder != BASE_FOLDER);
+                requestButton.show(!isHost && !modReady && !requested && !downloadingNow() && roomFolder != BASE_FOLDER);
+        }
+
+        function downloadingNow():Bool
+        {
+                return incomingQueue != null;
         }
 
         function appendChat(line:String):Void

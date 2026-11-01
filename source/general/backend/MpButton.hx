@@ -3,6 +3,8 @@ package general.backend;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.text.FlxText;
+import flixel.tweens.FlxEase;
+import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
 
 class MpButton
@@ -16,6 +18,8 @@ class MpButton
 
 	var bw:Int;
 	var bh:Int;
+	var hovering:Bool = false;
+	var scaleTween:FlxTween;
 
 	public function new(x:Float, y:Float, w:Int, h:Int, text:String, color:Int, cb:Void->Void)
 	{
@@ -48,8 +52,51 @@ class MpButton
 		bg.makeGraphic(bw, bh, color);
 	}
 
+	function scaleTo(target:Float, time:Float, ease:Float->Float):Void
+	{
+		if (scaleTween != null)
+			scaleTween.cancel();
+		scaleTween = FlxTween.tween(bg.scale, {x: target, y: target}, time, {
+			ease: ease,
+			onUpdate: function(_)
+			{
+				shadow.scale.set(bg.scale.x, bg.scale.y);
+				label.scale.set(bg.scale.x, bg.scale.y);
+			}
+		});
+	}
+
+	public function hover():Void
+	{
+		if (!shown || !enabled)
+			return;
+		var over:Bool = FlxG.mouse.overlaps(bg);
+		if (over != hovering)
+		{
+			hovering = over;
+			scaleTo(over ? 1.04 : 1, 0.12, FlxEase.quadOut);
+		}
+	}
+
+	function pressAnim():Void
+	{
+		bg.scale.set(0.92, 0.92);
+		shadow.scale.set(0.92, 0.92);
+		label.scale.set(0.92, 0.92);
+		scaleTo(hovering ? 1.04 : 1, 0.28, FlxEase.backOut);
+	}
+
 	public function show(v:Bool):Void
 	{
+		if (!v)
+		{
+			if (scaleTween != null)
+				scaleTween.cancel();
+			hovering = false;
+			bg.scale.set(1, 1);
+			shadow.scale.set(1, 1);
+			label.scale.set(1, 1);
+		}
 		shown = v;
 		shadow.visible = v;
 		shadow.active = v;
@@ -70,6 +117,9 @@ class MpButton
 
 	public function clicked():Bool
 	{
-		return shown && enabled && FlxG.mouse.justPressed && FlxG.mouse.overlaps(bg);
+		var hit:Bool = shown && enabled && FlxG.mouse.justPressed && FlxG.mouse.overlaps(bg);
+		if (hit)
+			pressAnim();
+		return hit;
 	}
 }

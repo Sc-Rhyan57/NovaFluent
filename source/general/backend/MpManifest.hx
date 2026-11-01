@@ -95,15 +95,23 @@ class MpManifest
 		return out;
 	}
 
-	public static function save(folder:String, entries:Array<ManifestEntry>):Void
+	public static function save(folder:String, entries:Array<ManifestEntry>):Bool
 	{
-		var safe:String = ~/[^A-Za-z0-9_\-]/g.replace(folder, '_');
-		File.saveContent(dir() + safe + '.json', Json.stringify({
-			folder: folder,
-			created: Date.now().getTime(),
-			count: entries.length,
-			files: [for (e in entries) row(e)]
-		}));
+		try
+		{
+			var safe:String = ~/[^A-Za-z0-9_\-]/g.replace(folder, '_');
+			File.saveContent(dir() + safe + '.json', Json.stringify({
+				folder: folder,
+				created: Date.now().getTime(),
+				count: entries.length,
+				files: [for (e in entries) row(e)]
+			}));
+			return true;
+		}
+		catch (e:Dynamic)
+		{
+			return false;
+		}
 	}
 
 	static function collect(root:String, prefix:String, out:Array<String>):Void
@@ -121,14 +129,11 @@ class MpManifest
 
 	static function mkdirs(d:String):Void
 	{
-		var cur:String = '';
-		for (part in d.split('/'))
-		{
-			if (part == '')
-				continue;
-			cur += part + '/';
-			if (!FileSystem.exists(cur))
-				FileSystem.createDirectory(cur);
-		}
+		while (d.length > 1 && StringTools.endsWith(d, '/'))
+			d = d.substr(0, d.length - 1);
+		if (d == '' || FileSystem.exists(d))
+			return;
+		mkdirs(haxe.io.Path.directory(d));
+		FileSystem.createDirectory(d);
 	}
 }
