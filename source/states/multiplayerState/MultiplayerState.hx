@@ -173,6 +173,8 @@ class MultiplayerState extends MusicBeatState
         var diffsBySong:Map<String, Array<String>> = new Map();
         var scannedMods:Map<String, Bool> = new Map();
         var manifestKnown:Bool = false;
+        var manifestSent:Bool = false;
+        var probed:Bool = false;
         var checking:Bool = false;
         var recheck:Bool = false;
         var publishing:Bool = false;
@@ -476,6 +478,13 @@ class MultiplayerState extends MusicBeatState
                 }
                 else
                         statusWait = 0;
+                if (mode == 'room' && !isHost && !modReady && !manifestKnown && !probed && joinWait > 6 && socket != null && roomFolder != BASE_FOLDER)
+                {
+                        probed = true;
+                        savingMod = true;
+                        socket.send({type: 'modRequest'});
+                        setStatus('Pedindo ao host para publicar o mod...');
+                }
                 if (joinWait > 10 && !statusKnown && !checking && !awaitingStatus)
                 {
                         statusKnown = true;
@@ -1167,7 +1176,12 @@ class MultiplayerState extends MusicBeatState
                 if (manifestKnown)
                         checkLocalMod();
                 else
-                        setStatus('Aguardando o host publicar o mod...');
+                {
+                        probed = true;
+                        socket.send({type: 'modRequest'});
+                        setProgress(0, 'Pedindo ao host para publicar o mod...');
+                        setStatus('Pedindo ao host para publicar o mod...');
+                }
         }
 
         function requestMod():Void
@@ -1475,6 +1489,9 @@ class MultiplayerState extends MusicBeatState
                 planning = new Map();
                 requested = false;
                 manifestKnown = false;
+                manifestSent = false;
+                probed = false;
+                savingMod = false;
                 checking = false;
                 recheck = false;
                 publishing = false;
@@ -1765,6 +1782,7 @@ class MultiplayerState extends MusicBeatState
                                         var mparts:Array<Array<Dynamic>> = ev.parts;
                                         for (i in 0...mparts.length)
                                                 socket.send({type: 'manifest', part: i, parts: mparts.length, files: mparts[i]});
+                                        manifestSent = true;
                                         setStatus('Manifesto do mod publicado (' + ev.count + ' arquivos).');
                                 }
                                 if (republish)
@@ -1893,15 +1911,24 @@ class MultiplayerState extends MusicBeatState
 
                         case 'manifestReady':
                                 manifestKnown = true;
-                                if (savingMod)
+                                if (!isHost && roomFolder != BASE_FOLDER && !downloadingNow() && !requested)
+                                {
+                                        savingMod = true;
                                         checkLocalMod();
+                                }
 
                         case 'modStatus':
                                 if (m.pending == true)
                                 {
                                         manifestKnown = false;
-                                        savingMod = false;
-                                        setStatus('O host ainda não publicou o mod. Tente de novo em instantes.');
+                                        savingMod = true;
+                                        if (!probed && socket != null)
+                                        {
+                                                probed = true;
+                                                socket.send({type: 'modRequest'});
+                                        }
+                                        setStatus('O host ainda não publicou o mod. Pedi para ele publicar...');
+                                        refreshRoomUI();
                                         return;
                                 }
                                 manifestKnown = true;
@@ -1981,12 +2008,16 @@ class MultiplayerState extends MusicBeatState
 
                         case 'playerJoined':
                                 appendChat('* ' + m.username + ' entrou');
+                                if (isHost && !manifestSent && !publishing && roomFolder != BASE_FOLDER)
+                                        publishManifest();
 
                         case 'modRequest':
                                 if (isHost && roomFolder != BASE_FOLDER)
                                 {
                                         var requester:String = Std.string(m.from);
                                         appendChat('* ' + requester + ' pediu o mod');
+                                        if (!needsOf.exists(requester) && !publishing)
+                                                publishManifest();
                                         plans.remove(requester);
                                         if (needsOf.exists(requester))
                                                 ensurePlan(requester);
