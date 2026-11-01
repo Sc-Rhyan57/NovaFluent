@@ -15,6 +15,8 @@ class StrumNote extends FlxSprite
 	public var rgbShader:RGBShaderReference;
 
 	public var resetAnim:Float = 0;
+	public var confirmStamp:Float = -1;
+	static final CONFIRM_MIN:Float = 0.07;
 	public var colorSwap:ColorSwap;
 	private var noteData:Int = 0;
 
@@ -236,8 +238,28 @@ class StrumNote extends FlxSprite
 		super.update(elapsed);
 	}
 
+	public function release():Void
+	{
+		if (animation.curAnim != null && animation.curAnim.name == 'confirm' && confirmStamp >= 0)
+		{
+			var shown:Float = haxe.Timer.stamp() - confirmStamp;
+			if (shown < CONFIRM_MIN)
+			{
+				resetAnim = CONFIRM_MIN - shown;
+				return;
+			}
+		}
+		playAnim('static');
+		resetAnim = 0;
+	}
+
 	public function playAnim(anim:String, ?force:Bool = false)
 	{
+		if (anim == 'confirm')
+		{
+			confirmStamp = haxe.Timer.stamp();
+			resetAnim = 0;
+		}
 		animation.play(anim, force);
 		if (animation.curAnim != null)
 		{

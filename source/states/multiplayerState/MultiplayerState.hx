@@ -1393,12 +1393,18 @@ class MultiplayerState extends MusicBeatState
         {
                 if (mode != 'room' && mode != 'results')
                         return;
-                stopIncoming();
-                chunkQueue = [];
-                plans = new Map();
-                planning = new Map();
+                abortTransfers();
                 if (socket != null)
-                        socket.send({type: 'leave'});
+                {
+                        try
+                        {
+                                socket.purge();
+                                socket.send({type: 'leave'});
+                        }
+                        catch (e:Dynamic)
+                        {
+                        }
+                }
                 closeSocket();
                 room = null;
                 isHost = false;
@@ -1409,6 +1415,33 @@ class MultiplayerState extends MusicBeatState
                 showMode('lobby');
                 setStatus('Você saiu da sala.');
                 refreshRooms();
+        }
+
+        var session:Int = 0;
+
+        function abortTransfers():Void
+        {
+                session++;
+                stopIncoming();
+                chunkQueue = [];
+                inFlight = new Map();
+                sentTo = new Map();
+                sendTotalTo = new Map();
+                needsOf = new Map();
+                plans = new Map();
+                planning = new Map();
+                requested = false;
+        }
+
+        function inRoom(name:String):Bool
+        {
+                if (room == null || room.members == null)
+                        return false;
+                var members:Array<Dynamic> = cast room.members;
+                for (m in members)
+                        if (Std.string(m.username) == name)
+                                return true;
+                return false;
         }
 
         function resetRoomState():Void
@@ -1482,6 +1515,16 @@ class MultiplayerState extends MusicBeatState
                 setProgress(1, 'Mod pronto.');
                 if (MpMatch.lastResults.length > 0)
                         showResults();
+                else if (MpMatch.wantResults)
+                {
+                        MpMatch.wantResults = false;
+                        waitingResults = true;
+                        resultTitle.text = 'AGUARDANDO O RESULTADO...';
+                        resultLocal.text = '';
+                        resultRemote.text = '';
+                        showMode('results');
+                        setStatus('Você morreu. Aguardando a partida terminar...');
+                }
                 else
                 {
                         waitingResults = true;
@@ -1738,7 +1781,11 @@ class MultiplayerState extends MusicBeatState
 
                         case 'plan':
                                 var to:String = Std.string(ev.to);
+                                if (ev.sid != session)
+                                        return;
                                 planning.remove(to);
+                                if (room == null || socket == null || !inRoom(to))
+                                        return;
                                 if (ev.error != null)
                                 {
                                         setProgress(0, 'Falha ao preparar o mod.');
@@ -1749,6 +1796,8 @@ class MultiplayerState extends MusicBeatState
                                 sendChunks(to);
 
                         case 'modProgress':
+                                if (room == null || incomingQueue == null)
+                                        return;
                                 var progDone:Float = ev.done;
                                 var progTotal:Float = ev.total;
                                 var progPct:Int = progTotal > 0 ? Std.int(progDone * 100 / progTotal) : 0;
@@ -1758,6 +1807,8 @@ class MultiplayerState extends MusicBeatState
 
                         case 'modDone':
                                 requested = false;
+                                if (room == null)
+                                        return;
                                 if (socket != null)
                                         socket.send({type: 'modState', downloading: false});
                                 if (ev.ok == true)
@@ -1799,7 +1850,7 @@ class MultiplayerState extends MusicBeatState
                         case '_close':
                                 if (mode == 'room' || mode == 'results')
                                 {
-                                        stopIncoming();
+                                        abortTransfers();
                                         setStatus('Conexão com a sala caiu.');
                                         closeSocket();
                                         room = null;
@@ -1864,12 +1915,14 @@ class MultiplayerState extends MusicBeatState
                                         var who:String = Std.string(m.from);
                                         if (m.ok == true || m.all == true)
                                                 needsOf.remove(who);
+                                        else if (m.append == true && needsOf.exists(who))
+                                                needsOf.set(who, needsOf.get(who).concat(cast m.files));
                                         else
                                                 needsOf.set(who, cast m.files);
                                 }
 
                         case 'kicked':
-                                stopIncoming();
+                                abortTransfers();
                                 closeSocket();
                                 room = null;
                                 isHost = false;
@@ -1958,7 +2011,7 @@ class MultiplayerState extends MusicBeatState
                                 showResults();
 
                         case 'roomClosed':
-                                stopIncoming();
+                                abortTransfers();
                                 room = null;
                                 isHost = false;
                                 closeSocket();
@@ -1984,6 +2037,7 @@ class MultiplayerState extends MusicBeatState
                 var songOnly:Bool = hostSongOnly();
                 var opt:Bool = hostOptimize();
                 var needs:Array<String> = needsOf.get(to);
+                var sid:Int = session;
                 setProgress(0, 'Preparando o mod para ' + to + '...');
                 setStatus('Preparando o mod para ' + to + '...');
                 Thread.create(() ->
@@ -1998,11 +2052,11 @@ class MultiplayerState extends MusicBeatState
                                                 set.set(n, true);
                                         sel = sel.filter(function(r:String):Bool return set.exists(r));
                                 }
-                                events.add({kind: 'plan', to: to, data: MpModTransfer.plan(folder, sel)});
+                                events.add({kind: 'plan', sid: sid, to: to, data: MpModTransfer.plan(folder, sel)});
                         }
                         catch (e:Dynamic)
                         {
-                                events.add({kind: 'plan', to: to, error: Std.string(e)});
+                                events.add({kind: 'plan', sid: sid, to: to, error: Std.string(e)});
                         }
                 });
         }

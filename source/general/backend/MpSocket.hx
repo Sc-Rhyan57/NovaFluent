@@ -261,6 +261,12 @@ class MpSocket
 		close();
 	}
 
+	public function purge():Void
+	{
+		outbox = [];
+		backlog = [];
+	}
+
 	public function close():Void
 	{
 		if (current == this)
@@ -276,13 +282,16 @@ class MpSocket
 		var fn:Dynamic = Reflect.field(target, 'close');
 		if (fn != null)
 		{
-			try
+			sys.thread.Thread.create(() ->
 			{
-				Reflect.callMethod(target, fn, []);
-			}
-			catch (e:Dynamic)
-			{
-			}
+				try
+				{
+					Reflect.callMethod(target, fn, []);
+				}
+				catch (e:Dynamic)
+				{
+				}
+			});
 		}
 	}
 }

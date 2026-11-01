@@ -42,6 +42,7 @@ class MpMatch
 	public static var songDifficulty:Int = 0;
 	public static var modFolder:String = '';
 	public static var dead:Bool = false;
+	public static var wantResults:Bool = false;
 	public static var lastResults:Array<Dynamic> = [];
 	public static var scriptPaths:Array<String> = [];
 	public static var remotePaused:Bool = false;
@@ -187,6 +188,7 @@ class MpMatch
 		active = true;
 		returning = false;
 		dead = false;
+		wantResults = false;
 		remotePaused = false;
 		aborted = false;
 		abortReason = '';
@@ -362,6 +364,7 @@ class MpMatch
 		active = false;
 		returning = false;
 		dead = false;
+		wantResults = false;
 		remotePaused = false;
 		stats = new Map();
 		remoteHits = [];

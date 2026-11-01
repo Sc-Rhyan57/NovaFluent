@@ -286,6 +286,7 @@ class PlayState extends MusicBeatState
         public var camHUD:FlxCamera;
         public var camGame:FlxCamera;
         public var camOther:FlxCamera;
+        public var camNotes:FlxCamera;
         public var luaVpadCam:FlxCamera;
         public var camPause:FlxCamera;
         public var cameraSpeed:Float = 1;
@@ -433,16 +434,19 @@ class PlayState extends MusicBeatState
                 camGame = initPsychCamera();
                 camHUD = new FlxCamera();
                 camOther = new FlxCamera();
+                camNotes = new FlxCamera();
                 luaVpadCam = new FlxCamera();
                 camPause = new FlxCamera();
 
                 camHUD.bgColor.alpha = 0;
                 camOther.bgColor.alpha = 0;
+                camNotes.bgColor.alpha = 0;
                 luaVpadCam.bgColor.alpha = 0;
                 camPause.bgColor.alpha = 0;
 
                 FlxG.cameras.add(camHUD, false);
                 FlxG.cameras.add(camOther, false);
+                FlxG.cameras.add(camNotes, false);
                 FlxG.cameras.add(luaVpadCam, false);
                 FlxG.cameras.add(camPause, false);
                 grpNoteSplashes = new FlxTypedGroup<NoteSplash>();
@@ -846,7 +850,7 @@ class PlayState extends MusicBeatState
                 moveCameraSection();
 
                 uiGroup.cameras = [camHUD];
-                noteGroup.cameras = [camHUD];
+                noteGroup.cameras = [camNotes];
                 comboGroup.cameras = [camHUD];
 
                 startingSong = true;
@@ -2539,6 +2543,16 @@ class PlayState extends MusicBeatState
         var mpSentLoaded:Bool = false;
         var mpGoAtLocal:Float = 0;
         var mpLeaving:Bool = false;
+        var mpDeathShown:Bool = false;
+
+        public function mpLeaveAfterDeath(toResults:Bool):Void
+        {
+                if (mpLeaving)
+                        return;
+                MpMatch.wantResults = toResults;
+                MpMatch.finish();
+                leaveMatchToLobby();
+        }
 
         function leaveMatchToLobby():Void
         {
@@ -2588,6 +2602,15 @@ class PlayState extends MusicBeatState
         override function update(elapsed:Float)
         {
                 logSongProgress();
+                if (camNotes != null && camHUD != null)
+                {
+                        camNotes.zoom = camHUD.zoom;
+                        camNotes.angle = camHUD.angle;
+                        camNotes.scroll.x = camHUD.scroll.x;
+                        camNotes.scroll.y = camHUD.scroll.y;
+                        camNotes.alpha = camHUD.alpha;
+                        camNotes.visible = camHUD.visible;
+                }
                 // Drain only the system messages that MpMatch.tick() does NOT know
                 // about (playerLoaded, allLoaded).  We pop one at a time and push
                 // back anything we don't handle, so tick() still sees its messages
@@ -2643,6 +2666,12 @@ class PlayState extends MusicBeatState
 
                 if (MpMatch.active || MpMatch.returning)
                         MpMatch.tick();
+                if (MpMatch.active && MpMatch.dead && !mpDeathShown && !mpLeaving)
+                {
+                        mpDeathShown = true;
+                        persistentUpdate = true;
+                        openSubState(new substates.MpDeathSubstate(camOther));
+                }
                 if (MpMatch.aborted)
                 {
                         var abortMsg:String = MpMatch.abortReason;
@@ -4352,7 +4381,7 @@ class PlayState extends MusicBeatState
                 if (MpMatch.playsOpponent() ? cpuControlled_opponent : cpuControlled || paused || key < 0)
                         return;
                 var char:Character = MpMatch.playsOpponent() ? dad : boyfriend;
-                if (!generatedMusic || endingSong || char.stunned)
+                if (!generatedMusic || endingSong || char.stunned || MpMatch.dead)
                         return;
 
                 keyboardViewer.pressed(key);
@@ -4518,10 +4547,7 @@ class PlayState extends MusicBeatState
 
                         var spr:StrumNote = MpMatch.playsOpponent() ? opponentStrums.members[key] : playerStrums.members[key];
                         if (spr != null)
-                        {
-                                spr.playAnim('static');
-                                spr.resetAnim = 0;
-                        }
+                                spr.release();
                         callOnScripts('onKeyRelease', [key]);
                 }
         }
@@ -4621,7 +4647,7 @@ class PlayState extends MusicBeatState
                                         keyPressed(i);
 
                 var char:Character = MpMatch.playsOpponent() ? dad : boyfriend;
-                if (startedCountdown && !char.stunned && generatedMusic)
+                if (startedCountdown && !char.stunned && generatedMusic && !MpMatch.dead)
                 {
                         var inputSongPos:Float = replayMode ? @:privateAccess replayExam.time : Conductor.songPosition;
                         // rewritten inputs???
@@ -5463,7 +5489,7 @@ class PlayState extends MusicBeatState
 
                 @:privateAccess
                 FlxG.game._filters = [];
-                camGame.filters = camHUD.filters = camOther.filters = [];
+                camGame.filters = camHUD.filters = camOther.filters = camNotes.filters = [];
 
                 super.destroy();
         }

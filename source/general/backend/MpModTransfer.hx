@@ -57,7 +57,7 @@ class MpModTransfer
 	static final KNOWN_EXT:Array<String> = [
 		'png', 'jpg', 'jpeg', 'xml', 'json', 'ogg', 'mp3', 'wav', 'mp4', 'webm', 'txt', 'lua', 'hx', 'frag', 'vert', 'ttf', 'otf', 'mov', 'avi', 'mkv', 'flac'
 	];
-	static final ALWAYS_DIRS:Array<String> = ['scripts/', 'weeks/', 'custom_events/', 'custom_notetypes/'];
+	static final ALWAYS_DIRS:Array<String> = ['scripts/', 'weeks/', 'custom_events/', 'custom_notetypes/', 'characters/', 'stages/'];
 
 	public static function folderSize(folder:String):Float
 	{
@@ -259,19 +259,38 @@ class MpModTransfer
 		if (stageLua != null)
 			scanLua(root + '/' + stageLua, tokens);
 
-		for (c in chars)
+		var doneChars:Map<String, Bool> = new Map();
+		var queue:Array<String> = chars.copy();
+		var progress:Bool = true;
+		while (progress)
 		{
-			addToken(tokens, c);
-			var cj:String = lowerMap.get('characters/' + c.toLowerCase() + '.json');
-			if (cj == null)
-				continue;
-			var cdata:Dynamic = readJson(root + '/' + cj);
-			walk(cdata, tokens);
-			var icon:Dynamic = cdata == null ? null : Reflect.field(cdata, 'healthicon');
-			if (icon != null)
+			progress = false;
+			for (t in tokens.keys())
 			{
-				addToken(tokens, 'icons/icon-' + Std.string(icon));
-				addToken(tokens, 'icons/' + Std.string(icon));
+				var short:String = StringTools.startsWith(t, 'characters/') ? t.substr(11) : t;
+				if (!doneChars.exists(short.toLowerCase()) && lowerMap.exists('characters/' + short.toLowerCase() + '.json') && queue.indexOf(short) == -1)
+					queue.push(short);
+			}
+			while (queue.length > 0)
+			{
+				var c:String = queue.shift();
+				var key:String = c.toLowerCase();
+				if (doneChars.exists(key))
+					continue;
+				doneChars.set(key, true);
+				progress = true;
+				addToken(tokens, c);
+				var cj:String = lowerMap.get('characters/' + key + '.json');
+				if (cj == null)
+					continue;
+				var cdata:Dynamic = readJson(root + '/' + cj);
+				walk(cdata, tokens);
+				var icon:Dynamic = cdata == null ? null : Reflect.field(cdata, 'healthicon');
+				if (icon != null)
+				{
+					addToken(tokens, 'icons/icon-' + Std.string(icon));
+					addToken(tokens, 'icons/' + Std.string(icon));
+				}
 			}
 		}
 
