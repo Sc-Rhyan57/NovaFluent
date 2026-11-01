@@ -1453,13 +1453,7 @@ class MultiplayerState extends MusicBeatState
                 if (room == null)
                         return;
 
-                // MpMatch.modFolder can be '_base' (the multiplayer sentinel) when the
-                // room uses no mod.  Mods.currentModDirectory expects '' in that case,
-                // otherwise Song.loadFromJson looks in mods/_base/ instead of the base
-                // assets and the chart fails to load with a "TEXT resource" error.
-                var modDir:String = MpMatch.modFolder;
-                if (modDir == null || modDir == BASE_FOLDER)
-                        modDir = '';
+                var modDir:String = roomModDirectory();
 
                 if (modDir != '' && !FileSystem.exists(Paths.mods(modDir)))
                 {
