@@ -200,7 +200,7 @@ class StrumNote extends FlxSprite
 	public function centerStrum(maniaThresh:Int, padding:Float)
 	{
 		var sWidth = /*(PlayState.isPixelStage && PlayState.SONG.mania > maniaThresh) ? (180 + ((10 + (5 * (PlayState.SONG.mania - maniaThresh))) * (PlayState.SONG.mania - maniaThresh))) : */ Note.swagWidthUnscaled;
-		if (!ClientPrefs.data.middleScroll)
+		if (!MpMatch.middleScroll())
 		{
 			var leftSide:Bool = player == 0;
 			if (MpMatch.active && !MpMatch.isHost)

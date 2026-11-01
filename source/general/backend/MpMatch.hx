@@ -34,6 +34,11 @@ class MpMatch
 			return !isHost;
 		return ClientPrefs.data.playOpponent;
 	}
+	public static function middleScroll():Bool
+	{
+		return ClientPrefs.data.middleScroll;
+	}
+
 	public static var returning:Bool = false;
 	public static var dieOnMiss:Bool = false;
 	public static var botplay:Bool = false;
@@ -353,10 +358,29 @@ class MpMatch
 
 	public static function exit():Void
 	{
-		if (socket != null)
-			socket.send(isHost ? {type: 'abort'} : {type: 'leave'});
+		var s:MpSocket = socket;
+		socket = null;
 		pendingStatus = isHost ? 'Você encerrou a partida e a sala foi fechada.' : 'Você saiu da partida.';
+		try
+		{
+			if (s != null)
+			{
+				s.purge();
+				s.send({type: 'leave'});
+			}
+		}
+		catch (e:Dynamic)
+		{
+		}
 		reset();
+		try
+		{
+			if (s != null)
+				s.close();
+		}
+		catch (e:Dynamic)
+		{
+		}
 	}
 
 	public static function reset():Void

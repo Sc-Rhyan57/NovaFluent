@@ -1470,8 +1470,8 @@ class PlayState extends MusicBeatState
                                                         {
                                                                 note.copyAlpha = false;
                                                                 note.alpha = note.multAlpha;
-                                                                if ((ClientPrefs.data.middleScroll && !note.mustPress && !MpMatch.playsOpponent())
-                                                                        || (ClientPrefs.data.middleScroll && note.mustPress && MpMatch.playsOpponent()))
+                                                                if ((MpMatch.middleScroll() && !note.mustPress && !MpMatch.playsOpponent())
+                                                                        || (MpMatch.middleScroll() && note.mustPress && MpMatch.playsOpponent()))
                                                                         note.alpha *= 0.35;
                                                         }
                                                 }
@@ -1979,7 +1979,7 @@ class PlayState extends MusicBeatState
 
                                                 if (sustainNote.mustPress)
                                                         sustainNote.x += FlxG.width / 2; // general offset
-                                                else if (ClientPrefs.data.middleScroll)
+                                                else if (MpMatch.middleScroll())
                                                 {
                                                         sustainNote.x += 310;
                                                         if (daNoteData > 1) // Up and Right
@@ -1994,7 +1994,7 @@ class PlayState extends MusicBeatState
                                 {
                                         swagNote.x += FlxG.width / 2; // general offset
                                 }
-                                else if (ClientPrefs.data.middleScroll)
+                                else if (MpMatch.middleScroll())
                                 {
                                         swagNote.x += 310;
                                         if (daNoteData > 1) // Up and Right
@@ -2229,7 +2229,7 @@ class PlayState extends MusicBeatState
 
         private function generateStaticArrows(player:Int):Void
         {
-                var strumLineX:Float = ClientPrefs.data.middleScroll ? STRUM_X_MIDDLESCROLL : STRUM_X;
+                var strumLineX:Float = MpMatch.middleScroll() ? STRUM_X_MIDDLESCROLL : STRUM_X;
                 var strumLineY:Float = ClientPrefs.data.downScroll ? (FlxG.height - 150) : 50;
                 var showOpponentStrums:Bool = ClientPrefs.data.opponentStrums || MpMatch.active;
                 for (i in 0...PlayState.SONG.mania + 1)
@@ -2242,7 +2242,7 @@ class PlayState extends MusicBeatState
                                 {
                                         if (!showOpponentStrums)
                                                 targetAlpha = 0;
-                                        else if (ClientPrefs.data.middleScroll)
+                                        else if (MpMatch.middleScroll())
                                                 targetAlpha = 0.35;
                                 }
                         }
@@ -2252,7 +2252,7 @@ class PlayState extends MusicBeatState
                                 {
                                         if (!showOpponentStrums)
                                                 targetAlpha = 0;
-                                        else if (ClientPrefs.data.middleScroll)
+                                        else if (MpMatch.middleScroll())
                                                 targetAlpha = 0.35;
                                 }
                         }
@@ -2900,7 +2900,7 @@ class PlayState extends MusicBeatState
                                                                 {
                                                                         daNote.visible = true;
                                                                         if (daNote.alpha <= 0.05)
-                                                                                daNote.alpha = daNote.multAlpha * (ClientPrefs.data.middleScroll && daNote.mpRemote ? 0.35 : 1);
+                                                                                daNote.alpha = daNote.multAlpha * (MpMatch.middleScroll() && daNote.mpRemote ? 0.35 : 1);
                                                                 }
                                                                 if (daNote.mustPress)
                                                                 {
@@ -5200,7 +5200,7 @@ class PlayState extends MusicBeatState
                         if (spr.alpha <= 0.05)
                         {
                                 var remoteSide:Bool = MpMatch.playsOpponent() ? spr.player == 1 : spr.player == 0;
-                                spr.alpha = ClientPrefs.data.middleScroll && remoteSide ? 0.35 : 1;
+                                spr.alpha = MpMatch.middleScroll() && remoteSide ? 0.35 : 1;
                         }
                 }
         }

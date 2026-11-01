@@ -282,16 +282,13 @@ class MpSocket
 		var fn:Dynamic = Reflect.field(target, 'close');
 		if (fn != null)
 		{
-			sys.thread.Thread.create(() ->
+			try
 			{
-				try
-				{
-					Reflect.callMethod(target, fn, []);
-				}
-				catch (e:Dynamic)
-				{
-				}
-			});
+				Reflect.callMethod(target, fn, []);
+			}
+			catch (e:Dynamic)
+			{
+			}
 		}
 	}
 }
