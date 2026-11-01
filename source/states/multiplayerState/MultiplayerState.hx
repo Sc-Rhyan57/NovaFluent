@@ -150,6 +150,10 @@ class MultiplayerState extends MusicBeatState
         var startAt:Float = 0;
         var startAtLocal:Float = 0;
         var requestWait:Float = 0;
+        var statusKnown:Bool = false;
+        var awaitingStatus:Bool = false;
+        var statusWait:Float = 0;
+        var joinWait:Float = 0;
 
         var estimateText:FlxText;
         var modDropdown:MpDropdown;
@@ -453,6 +457,29 @@ class MultiplayerState extends MusicBeatState
                                 setStatus('Erro interno: ' + Std.string(e));
                         }
                         ev = events.pop(false);
+                }
+
+                if (mode == 'room' && !isHost && !modReady && !statusKnown)
+                        joinWait += elapsed;
+                else
+                        joinWait = 0;
+                if (awaitingStatus)
+                {
+                        statusWait += elapsed;
+                        if (statusWait > 20)
+                        {
+                                awaitingStatus = false;
+                                statusKnown = true;
+                                setStatus('O servidor não respondeu à verificação do mod. Clique em BAIXAR MOD para tentar de novo.');
+                                refreshRoomUI();
+                        }
+                }
+                else
+                        statusWait = 0;
+                if (joinWait > 10 && !statusKnown && !checking && !awaitingStatus)
+                {
+                        statusKnown = true;
+                        refreshRoomUI();
                 }
 
                 if (requested && incomingQueue == null)
@@ -1415,6 +1442,10 @@ class MultiplayerState extends MusicBeatState
                 chatText.text = '';
                 roomFolder = r.mod.folder;
                 resetRoomState();
+                statusKnown = false;
+                awaitingStatus = false;
+                statusWait = 0;
+                joinWait = 0;
                 scannedMods.remove(roomModDirectory());
                 modReady = isHost || roomFolder == BASE_FOLDER;
                 if (isHost)
@@ -1540,7 +1571,7 @@ class MultiplayerState extends MusicBeatState
                 readyButton.setLabel(myReady ? 'CANCELAR' : 'PRONTO');
                 playButton.show(isHost);
                 playButton.setEnabled(canStart());
-                requestButton.show(!isHost && !modReady && !requested && !downloadingNow() && roomFolder != BASE_FOLDER);
+                requestButton.show(!isHost && !modReady && statusKnown && !requested && !downloadingNow() && !checking && !awaitingStatus && roomFolder != BASE_FOLDER);
         }
 
         function downloadingNow():Bool
@@ -1685,12 +1716,19 @@ class MultiplayerState extends MusicBeatState
                         case 'checked':
                                 checking = false;
                                 if (ev.error != null)
+                                {
+                                        awaitingStatus = false;
+                                        statusKnown = true;
                                         setStatus('Falha ao verificar o mod: ' + ev.error);
+                                }
                                 else if (socket != null)
                                 {
                                         var cparts:Array<Array<Dynamic>> = ev.parts;
+                                        awaitingStatus = true;
+                                        statusWait = 0;
                                         for (i in 0...cparts.length)
                                                 socket.send({type: 'modCheck', part: i, parts: cparts.length, files: cparts[i]});
+                                        setStatus('Verificando o mod com o host...');
                                 }
                                 if (recheck)
                                 {
@@ -1724,6 +1762,9 @@ class MultiplayerState extends MusicBeatState
                                         socket.send({type: 'modState', downloading: false});
                                 if (ev.ok == true)
                                 {
+                                        statusKnown = false;
+                                        awaitingStatus = true;
+                                        statusWait = 0;
                                         scannedMods.remove(roomModDirectory());
                                         setProgress(1, 'Mod instalado. Verificando...');
                                         setStatus('Mod instalado. Verificando com o host...');
@@ -1793,6 +1834,8 @@ class MultiplayerState extends MusicBeatState
                                         return;
                                 }
                                 manifestKnown = true;
+                                awaitingStatus = false;
+                                statusKnown = true;
                                 if (m.ok == true)
                                 {
                                         modReady = true;
@@ -1803,8 +1846,15 @@ class MultiplayerState extends MusicBeatState
                                 else
                                 {
                                         modReady = false;
+                                        var example:String = '';
+                                        if (m.sample != null)
+                                        {
+                                                var sampleList:Array<String> = cast m.sample;
+                                                if (sampleList.length > 0)
+                                                        example = ' Ex.: ' + sampleList.slice(0, 3).join(', ');
+                                        }
                                         setProgress(0, 'Faltam ' + m.missing + ' arquivos e ' + m.changed + ' diferem do host.');
-                                        setStatus('Seu mod não confere. Clique em BAIXAR MOD.');
+                                        setStatus('Seu mod não confere: faltam ' + m.missing + ' e ' + m.changed + ' diferem.' + example);
                                 }
                                 refreshRoomUI();
 

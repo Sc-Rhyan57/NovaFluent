@@ -17,7 +17,7 @@ typedef ManifestEntry =
 
 class MpManifest
 {
-	public static final PART_ENTRIES:Int = 1500;
+	public static final PART_ENTRIES:Int = 300;
 	static final SAMPLE:Int = 65536;
 
 	public static function dir():String
