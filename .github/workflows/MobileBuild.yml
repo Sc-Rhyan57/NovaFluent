@@ -7,6 +7,11 @@ on:
         required: false
         type: string
         default: ''
+      build_windows:
+        description: 'Gerar build Windows (PC)'
+        required: false
+        type: boolean
+        default: false
 
   workflow_dispatch:
     inputs:
@@ -25,14 +30,55 @@ on:
         required: false
         type: boolean
         default: true
+      build_windows:
+        description: 'Gerar build Windows (PC)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    outputs:
+      tag: ${{ steps.create_release.outputs.tag }}
+      commit_sha: ${{ steps.create_release.outputs.commit_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Create Release
+        id: create_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          TAG="build-${{ github.run_number }}-${COMMIT_SHA}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+          {
+            echo "Build do NovaFlare Engine"
+            echo ""
+            echo "**Commit:** \`$COMMIT_SHA\`"
+            echo "**Run:** #${{ github.run_number }}"
+            echo ""
+            echo "Os binários de cada plataforma serão anexados conforme os builds forem concluídos."
+          } > RELEASE_NOTES.md
+
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "Build #${{ github.run_number }} ($COMMIT_SHA)" \
+            --notes-file RELEASE_NOTES.md
+
   Android:
+    needs: create-release
     runs-on: macos-15
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
+    if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.build_android) }}
     environment: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'private-build' || 'public-build' }}
     concurrency:
       group: ${{ github.workflow }}-Android-${{ github.ref }}
@@ -75,7 +121,7 @@ jobs:
              [[ "${{ inputs.dependencies_to_update }}" == "android" ]]; then
             echo "skip_cache=true" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
-          elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "ios" ]]; then
+          elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "ios" && "${{ inputs.dependencies_to_update }}" != "windows" ]]; then
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
             echo "libs_to_update=${{ inputs.dependencies_to_update }}" >> $GITHUB_OUTPUT
@@ -156,21 +202,19 @@ jobs:
             haxelib run lime build android -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$CURRENT_VERSION
           fi
 
-      - name: Create Android Release
-        if: github.event_name != 'pull_request'
+      - name: Upload APK to Release
+        if: ${{ success() && needs.create-release.outputs.tag != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
         run: |
-          TAG="android-${{ github.run_number }}-$(git rev-parse --short HEAD)"
-          gh release create "$TAG" \
-            export/release/android/bin/app/build/outputs/apk/release/*.apk \
-            --target "$GITHUB_SHA" \
-            --title "Android $TAG" \
-            --notes "Build Android do NovaFlare Engine"
+          echo "Enviando APK para a release $TAG"
+          gh release upload "$TAG" export/release/android/bin/app/build/outputs/apk/release/*.apk
 
   iOS:
+    needs: create-release
     runs-on: macos-15
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
+    if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.build_ios) }}
     environment: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'private-build' || 'public-build' }}
     concurrency:
       group: ${{ github.workflow }}-iOS-${{ github.ref }}
@@ -206,7 +250,7 @@ jobs:
              [[ "${{ inputs.dependencies_to_update }}" == "ios" ]]; then
             echo "skip_cache=true" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
-          elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "android" ]]; then
+          elif [[ -n "${{ inputs.dependencies_to_update }}" && "${{ inputs.dependencies_to_update }}" != "android" && "${{ inputs.dependencies_to_update }}" != "windows" ]]; then
             echo "skip_cache=false" >> $GITHUB_OUTPUT
             echo "update_libs=true" >> $GITHUB_OUTPUT
             echo "libs_to_update=${{ inputs.dependencies_to_update }}" >> $GITHUB_OUTPUT
@@ -280,14 +324,156 @@ jobs:
           cd export/release/ios/build/Release-iphoneos/
           zip -r ios.zip *.ipa
 
-      - name: Create iOS Release
-        if: github.event_name != 'pull_request'
+      - name: Upload IPA to Release
+        if: ${{ success() && needs.create-release.outputs.tag != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
         run: |
-          TAG="ios-${{ github.run_number }}-$(git rev-parse --short HEAD)"
-          gh release create "$TAG" \
-            export/release/ios/build/Release-iphoneos/ios.zip \
-            --target "$GITHUB_SHA" \
-            --title "iOS $TAG" \
-            --notes "Build iOS do NovaFlare Engine"
+          echo "Enviando IPA para a release $TAG"
+          gh release upload "$TAG" export/release/ios/build/Release-iphoneos/ios.zip
+
+  Windows:
+    needs: create-release
+    runs-on: windows-latest
+    if: ${{ !cancelled() && inputs.build_windows }}
+    environment: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'private-build' || 'public-build' }}
+    concurrency:
+      group: ${{ github.workflow }}-Windows-${{ github.ref }}
+
+    env:
+      NOVA_GA_GAME_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_GAME_KEY || '' }}
+      NOVA_GA_SECRET_KEY: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.NOVA_GA_SECRET_KEY || '' }}
+      NOVA_GA_REQUIRED: ${{ github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '1' || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@master
+        with:
+          haxe-version: 4.3.7
+
+      - name: Check GameAnalytics credentials
+        if: github.repository == 'NovaFlare-Engine-Concentration/FNF-NovaFlare-Engine' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        shell: pwsh
+        run: ./tools/check-gameanalytics-env.ps1 -Required
+
+      - name: Determine Windows cache strategy
+        id: windows_cache
+        shell: pwsh
+        run: |
+          $depInput = "${{ inputs.dependencies_to_update }}"
+          if ($depInput -eq "all" -or $depInput -eq "windows") {
+            echo "skip_cache=true" >> $env:GITHUB_OUTPUT
+            echo "update_libs=true" >> $env:GITHUB_OUTPUT
+          } elseif ($depInput -ne "" -and $depInput -ne "android" -and $depInput -ne "ios") {
+            echo "skip_cache=false" >> $env:GITHUB_OUTPUT
+            echo "update_libs=true" >> $env:GITHUB_OUTPUT
+            echo "libs_to_update=$depInput" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "skip_cache=false" >> $env:GITHUB_OUTPUT
+            echo "update_libs=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Restore Windows haxelibs cache
+        id: windows_libs
+        if: steps.windows_cache.outputs.skip_cache == 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            .haxelib
+            C:\haxelib
+          key: haxelib-windows-${{ hashFiles('hmm.json') }}-${{ github.run_id }}
+          restore-keys: |
+            haxelib-windows-${{ hashFiles('hmm.json') }}-
+
+      - name: Restore Windows native build cache
+        id: windows_native
+        if: steps.windows_cache.outputs.skip_cache == 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            export/release/windows/obj
+          key: native-windows-${{ hashFiles('Project.xml', 'hmm.json', 'source/**') }}-${{ github.run_id }}
+          restore-keys: |
+            native-windows-
+
+      - name: Enable Windows long path support
+        shell: pwsh
+        run: |
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -Type DWord -Force
+          $check = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled"
+          Write-Output "LongPathsEnabled = $($check.LongPathsEnabled)"
+
+      - name: Install Libraries
+        shell: pwsh
+        run: |
+          haxelib setup C:\haxelib
+          if ([string]::IsNullOrEmpty("${{ steps.windows_libs.outputs.cache-matched-key }}") -or "${{ steps.windows_cache.outputs.skip_cache }}" -eq "true") {
+            haxelib git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies --quiet
+            haxelib run hmm install
+            foreach ($library in @("polymod", "thx.core", "thx.semver", "FlxPartialSound")) {
+              haxelib run hmm reinstall --force $library
+            }
+          } else {
+            Write-Output "haxelibs restaurados do cache, instalação pulada."
+          }
+
+          if ("${{ steps.windows_cache.outputs.update_libs }}" -eq "true") {
+            if ("${{ steps.windows_cache.outputs.skip_cache }}" -eq "true") {
+              Write-Output "强制重新安装所有Windows依赖..."
+            } elseif (-not [string]::IsNullOrEmpty("${{ steps.windows_cache.outputs.libs_to_update }}")) {
+              $libs = "${{ steps.windows_cache.outputs.libs_to_update }}"
+              Write-Output "更新指定Windows依赖: $libs"
+              haxelib git hmm https://github.com/NovaFlare-Engine-haxelib/hmm-3.1.0 70aca779a9d374a6e6b83c18715a3991a147ca37 --skip-dependencies
+              haxelib run hmm reinstall --force $libs.Split(' ')
+            }
+          }
+
+          Write-Output "lime revision: $(git -C .haxelib/lime/git rev-parse HEAD)"
+          Write-Output "openfl revision: $(git -C .haxelib/openfl/git rev-parse HEAD)"
+
+      - name: Extract current version
+        id: get_version
+        shell: pwsh
+        run: |
+          $content = Get-Content Project.xml -Raw
+          if ($content -match 'build-number="([^"]*)"') {
+              $CURRENT_VERSION = $matches[1]
+              echo "current_version=$CURRENT_VERSION" >> $env:GITHUB_OUTPUT
+              Write-Output "成功提取版本号: $CURRENT_VERSION"
+          } else {
+              Write-Error "在Project.xml中未找到build-number属性"
+              exit 1
+          }
+
+      - name: Compile
+        shell: pwsh
+        run: |
+          $COMMIT_SHA = (git rev-parse --short HEAD)
+          $CURRENT_VERSION = "${{ steps.get_version.outputs.current_version }}"
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $NEW_VERSION = $CURRENT_VERSION -replace "-dev", "-$COMMIT_SHA"
+            haxelib run lime build windows -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$NEW_VERSION
+          } else {
+            haxelib run lime build windows -Dcommit_sha=$COMMIT_SHA -Dbuild_number=$CURRENT_VERSION
+          }
+
+      - name: Create Windows zip package
+        shell: pwsh
+        run: |
+          cd export\release\windows\bin
+          Compress-Archive -Path * -DestinationPath windows.zip
+
+      - name: Upload Windows zip to Release
+        if: ${{ success() && needs.create-release.outputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        shell: pwsh
+        run: |
+          Write-Output "Enviando windows.zip para a release $env:TAG"
+          gh release upload $env:TAG export\release\windows\bin\windows.zip
