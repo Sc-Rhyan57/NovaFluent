@@ -744,7 +744,7 @@ class MultiplayerState extends MusicBeatState
                 }
                 var songName:String = createSongs[createSongIdx];
                 var p:PendingSong = MpMatch.pendingSong;
-                var songDifficulty:Int = p != null && p.name == songName ? p.difficulty : 0;
+                var songDifficulty:Int = resolveDifficulty(folder == BASE_FOLDER ? '' : folder, songName, p != null && p.name == songName ? p.difficulty : 0);
 
                 var name:String = StringTools.trim(nameInput.text);
                 if (name == '')
@@ -911,8 +911,43 @@ class MultiplayerState extends MusicBeatState
                 if (!isHost || socket == null || room == null || songsList.length == 0)
                         return;
                 songIdx = (songIdx + delta + songsList.length) % songsList.length;
-                socket.send({type: 'setSong', name: songsList[songIdx], difficulty: room.settings.song.difficulty});
+                socket.send({type: 'setSong', name: songsList[songIdx], difficulty: resolveDifficulty(roomModDirectory(), songsList[songIdx], Std.int(room.settings.song.difficulty))});
                 setStatus('Trocando a música para ' + songsList[songIdx] + '...');
+        }
+
+        function chartExists(modDir:String, folder:String, file:String):Bool
+        {
+                if (modDir != '' && FileSystem.exists(Paths.mods(modDir + '/data/' + folder + '/' + file + '.json')))
+                        return true;
+                return FileSystem.exists(Paths.getSharedPath('data/' + folder + '/' + file + '.json'));
+        }
+
+        function resolveDifficulty(modDir:String, songName:String, preferred:Int):Int
+        {
+                if (Difficulty.list == null || Difficulty.list.length == 0)
+                        Difficulty.resetList();
+                var folder:String = Paths.formatToSongPath(songName);
+                var count:Int = Difficulty.list.length;
+                if (preferred < 0 || preferred >= count)
+                        preferred = 0;
+                for (i in 0...count)
+                {
+                        var idx:Int = (preferred + i) % count;
+                        if (chartExists(modDir, folder, Highscore.formatSong(folder, idx)))
+                                return idx;
+                }
+                return preferred;
+        }
+
+        function chartFileFor(modDir:String, songName:String, preferred:Int):String
+        {
+                var folder:String = Paths.formatToSongPath(songName);
+                var file:String = Highscore.formatSong(folder, resolveDifficulty(modDir, songName, preferred));
+                if (chartExists(modDir, folder, file))
+                        return file;
+                if (chartExists(modDir, folder, folder))
+                        return folder;
+                return file;
         }
 
         function loadRoomSong():Dynamic
@@ -921,10 +956,9 @@ class MultiplayerState extends MusicBeatState
                 var folder:String = Paths.formatToSongPath(Std.string(s.name));
                 try
                 {
-                        // roomModDirectory() already converts _base -> '' so the chart
-                        // lookup falls back to the base assets folder correctly.
-                        Mods.currentModDirectory = roomModDirectory();
-                        return Song.loadFromJson(Highscore.formatSong(folder, Std.int(s.difficulty)), folder);
+                        var modDir:String = roomModDirectory();
+                        Mods.currentModDirectory = modDir;
+                        return Song.loadFromJson(chartFileFor(modDir, folder, Std.int(s.difficulty)), folder);
                 }
                 catch (e:Dynamic)
                 {
@@ -1427,17 +1461,6 @@ class MultiplayerState extends MusicBeatState
                 if (modDir == null || modDir == BASE_FOLDER)
                         modDir = '';
 
-                // Debug: log what we're about to load so crash reports are useful.
-                try { File.saveContent('mp_launch_debug.log',
-                        'modFolder=' + MpMatch.modFolder + '\n' +
-                        'modDir=' + modDir + '\n' +
-                        'songName=' + MpMatch.songName + '\n' +
-                        'songDifficulty=' + MpMatch.songDifficulty + '\n' +
-                        'modsRoot=' + Paths.mods('') + '\n' +
-                        'modExists=' + (modDir != '' ? Std.string(FileSystem.exists(Paths.mods(modDir))) : 'N/A') + '\n' +
-                        'songPath=' + Paths.mods(modDir + '/songs/' + Paths.formatToSongPath(MpMatch.songName) + '/') + '\n'
-                ); } catch(e:Dynamic) {}
-
                 if (modDir != '' && !FileSystem.exists(Paths.mods(modDir)))
                 {
                         launchFailed('Mod não instalado: ' + modDir + ' (esperado em: ' + Paths.mods(modDir) + ')');
@@ -1450,24 +1473,9 @@ class MultiplayerState extends MusicBeatState
                 var songFolder:String = Paths.formatToSongPath(MpMatch.songName);
                 try
                 {
-                        // Set the mod directory BEFORE any Paths/Song call so that
-                        // the chart JSON, Inst.ogg, Voices.ogg, stage data, etc. are
-                        // all resolved from mods/<modDir>/songs/<song>/ instead of
-                        // assets/shared/data/<song>/.
                         Mods.currentModDirectory = modDir;
-
-                        // Verify the chart file exists before trying to load it.
-                        var chartFile:String = Highscore.formatSong(songFolder, MpMatch.songDifficulty);
-                        #if sys
-                        var chartPath:String = modDir != ''
-                                ? Paths.mods(modDir + '/data/' + songFolder + '/' + chartFile + '.json')
-                                : '';
-                        if (chartPath != '' && !FileSystem.exists(chartPath))
-                        {
-                                // Also check the mod's songs folder structure
-                                chartPath = Paths.mods(modDir + '/songs/' + songFolder + '/' + chartFile + '.json');
-                        }
-                        #end
+                        MpMatch.songDifficulty = resolveDifficulty(modDir, songFolder, MpMatch.songDifficulty);
+                        var chartFile:String = chartFileFor(modDir, songFolder, MpMatch.songDifficulty);
 
                         PlayState.SONG = Song.loadFromJson(chartFile, songFolder);
                         PlayState.SONG.speed = MpMatch.noteSpeed;
