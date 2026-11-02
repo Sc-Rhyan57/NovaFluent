@@ -19,6 +19,8 @@ typedef PendingSong =
 
 class MpMatch
 {
+	static final MISS_REPORT_MS:Int = 125;
+
 	public static var pendingSong:PendingSong = null;
 	public static var socket:MpSocket = null;
 	public static var room:Dynamic = null;
@@ -250,11 +252,18 @@ class MpMatch
 		if (!active || socket == null || note == null || note.mpId == null || note.mpReported)
 			return;
 		note.mpReported = true;
+		var songMs:Int = Math.round(Conductor.songPosition);
+		if (type == 'miss')
+		{
+			var earliest:Int = Math.round(note.strumTime) + MISS_REPORT_MS;
+			if (songMs < earliest)
+				songMs = earliest;
+		}
 		socket.send({
 			type: type,
 			matchId: matchId,
 			noteId: note.mpId,
-			songMs: Math.round(Conductor.songPosition)
+			songMs: songMs
 		});
 	}
 

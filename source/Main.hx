@@ -212,6 +212,14 @@ class Main extends Sprite
 		#if LUA_ALLOWED llua.Lua.set_callbacks_function(cpp.Callable.fromStaticFunction(scripts.lua.CallbackHandler.call)); #end
 		Controls.instance = new Controls();
 
+		try
+		{
+			general.backend.ModNameSanitizer.run(Paths.mods());
+		}
+		catch (e:Dynamic)
+		{
+		}
+
 		#if android
 			if (AppData.getVersionName() != Application.current.meta.get('version')
 				|| AppData.getAppName() != Application.current.meta.get('file')                                                                                                                                                                                                                                                                                                                                                                                                                         || !AppData.verifySignature()

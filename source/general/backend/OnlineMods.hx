@@ -2,6 +2,7 @@ package general.backend;
 
 import haxe.Http;
 import haxe.Json;
+import haxe.crypto.Md5;
 import haxe.crypto.Sha256;
 import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
@@ -24,6 +25,7 @@ typedef OnlineMod =
 	var download:String;
 	var size:Float;
 	var sha256:String;
+	@:optional var md5:String;
 };
 
 class OnlineMods
@@ -220,6 +222,7 @@ class OnlineMods
 
 		onPhase('Verificando', 1);
 		verify(bytes, mod.sha256);
+		verifyMd5(bytes, mod.md5);
 
 		onPhase('Extraindo', 1);
 		extract(bytes, mod.folder);
@@ -238,6 +241,16 @@ class OnlineMods
 		var actual:String = Sha256.make(bytes).toHex();
 		if (actual != expected)
 			throw 'SHA-256 não confere (esperado ' + expected + ', recebido ' + actual + ').';
+	}
+
+	static function verifyMd5(bytes:Bytes, expected:Null<String>):Void
+	{
+		if (expected == null || expected == '')
+			return;
+
+		var actual:String = Md5.make(bytes).toHex();
+		if (actual != expected)
+			throw 'MD5 não confere (esperado ' + expected + ', recebido ' + actual + ').';
 	}
 
 	static function extract(bytes:Bytes, folder:String):Void

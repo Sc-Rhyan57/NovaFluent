@@ -2,9 +2,12 @@ package states.onlineModsState;
 
 import flixel.FlxG;
 import flixel.FlxSprite;
+import flixel.addons.ui.FlxInputText;
 import flixel.math.FlxRect;
 import flixel.text.FlxText;
 import flixel.util.FlxColor;
+import general.backend.GameBananaApi;
+import general.backend.GameBananaApi.GbResult;
 import general.backend.MpButton;
 import general.backend.MusicBeatState;
 import general.backend.OnlineMods;
@@ -48,6 +51,17 @@ class OnlineModsState extends MusicBeatState
 	var buttons:Array<MpButton> = [];
 	var scroll:Int = 0;
 	var busy:Bool = false;
+	var source:String = 'nova';
+	var gen:Int = 0;
+	var gbPage:Int = 1;
+	var gbQuery:String = '';
+	var gbMore:Bool = false;
+	var tabNova:MpButton;
+	var tabGb:MpButton;
+	var searchButton:MpButton;
+	var prevButton:MpButton;
+	var nextButton:MpButton;
+	var searchInput:FlxInputText;
 
 	var status:FlxText;
 	var barBg:FlxSprite;
@@ -92,10 +106,118 @@ class OnlineModsState extends MusicBeatState
 		downButton.show(true);
 		backButton.show(true);
 
+		tabNova = track(new MpButton(FlxG.width - PX - 340, 42, 160, 40, 'NOVAFLARE', B_PRIMARY, function() setSource('nova')));
+		tabGb = track(new MpButton(FlxG.width - PX - 170, 42, 160, 40, 'GAMEBANANA', B_NEUTRAL, function() setSource('gb')));
+		tabNova.show(true);
+		tabGb.show(true);
+
+		searchInput = new FlxInputText(PX + 240, FlxG.height - 58, 480, '', 18);
+		searchInput.visible = false;
+		searchInput.active = false;
+		add(searchInput);
+		searchButton = track(new MpButton(PX + 740, FlxG.height - 64, 140, 46, 'BUSCAR', B_PRIMARY, doSearch));
+		prevButton = track(new MpButton(PX + 900, FlxG.height - 64, 130, 46, 'ANTERIOR', B_NEUTRAL, function() changePage(-1)));
+		nextButton = track(new MpButton(PX + 1050, FlxG.height - 64, 150, 46, 'PRÓXIMA', B_NEUTRAL, function() changePage(1)));
+
+		loadSource();
+	}
+
+	function setSource(next:String):Void
+	{
+		if (busy || next == source)
+			return;
+		source = next;
+		scroll = 0;
+		gbPage = 1;
+		tabNova.setColor(source == 'nova' ? B_PRIMARY : B_NEUTRAL);
+		tabGb.setColor(source == 'gb' ? B_PRIMARY : B_NEUTRAL);
+		loadSource();
+	}
+
+	function loadSource():Void
+	{
+		gen++;
+		var mine:Int = gen;
+		var gb:Bool = source == 'gb';
+
+		clearRows();
+		mods = [];
+		scroll = 0;
+
+		searchInput.visible = gb;
+		searchInput.active = gb;
+		searchButton.show(gb);
+		prevButton.show(gb);
+		nextButton.show(gb);
+		updatePager();
+
+		if (gb)
+		{
+			status.text = 'Buscando no GameBanana...';
+			GameBananaApi.search(gbQuery, gbPage, function(res:GbResult, error:String)
+			{
+				events.add({kind: 'gblist', gen: mine, res: res, error: error});
+			});
+			return;
+		}
+
+		status.text = 'Carregando lista...';
 		Thread.create(() -> OnlineMods.fetchList(function(list:Array<OnlineMod>, error:String)
 		{
-			events.add({kind: 'list', mods: list, error: error});
+			events.add({kind: 'list', gen: mine, mods: list, error: error});
 		}));
+	}
+
+	function doSearch():Void
+	{
+		if (busy || source != 'gb')
+			return;
+		gbQuery = StringTools.trim(searchInput.text);
+		gbPage = 1;
+		loadSource();
+	}
+
+	function changePage(delta:Int):Void
+	{
+		if (busy || source != 'gb')
+			return;
+		var next:Int = gbPage + delta;
+		if (next < 1 || (delta > 0 && !gbMore))
+			return;
+		gbPage = next;
+		loadSource();
+	}
+
+	function updatePager():Void
+	{
+		prevButton.setEnabled(source == 'gb' && gbPage > 1 && !busy);
+		nextButton.setEnabled(source == 'gb' && gbMore && !busy);
+		searchButton.setEnabled(source == 'gb' && !busy);
+		tabNova.setEnabled(!busy);
+		tabGb.setEnabled(!busy);
+	}
+
+	function clearRows():Void
+	{
+		for (r in rows)
+		{
+			remove(r.bg, true);
+			remove(r.cover, true);
+			remove(r.name, true);
+			remove(r.info, true);
+			remove(r.button.shadow, true);
+			remove(r.button.bg, true);
+			remove(r.button.label, true);
+			buttons.remove(r.button);
+			r.bg.destroy();
+			r.cover.destroy();
+			r.name.destroy();
+			r.info.destroy();
+			r.button.shadow.destroy();
+			r.button.bg.destroy();
+			r.button.label.destroy();
+		}
+		rows = [];
 	}
 
 	function track(b:MpButton):MpButton
@@ -127,7 +249,10 @@ class OnlineModsState extends MusicBeatState
 			}
 		}
 
-		if (controls.BACK)
+		if (source == 'gb' && searchInput.hasFocus && FlxG.keys.justPressed.ENTER)
+			doSearch();
+
+		if (controls.BACK && !(searchInput != null && searchInput.hasFocus))
 			goBack();
 	}
 
@@ -135,7 +260,30 @@ class OnlineModsState extends MusicBeatState
 	{
 		switch (ev.kind)
 		{
+			case 'gblist':
+				if (ev.gen != gen)
+					return;
+				if (ev.error != null || ev.res == null)
+				{
+					general.backend.NFLog.warn('mods', 'GameBanana indisponível: ' + ev.error);
+					mods = [];
+					gbMore = false;
+					buildRows();
+					updatePager();
+					status.text = 'Falha no GameBanana: ' + ev.error;
+					return;
+				}
+				var res:GbResult = ev.res;
+				mods = res.mods;
+				gbMore = res.more;
+				buildRows();
+				updatePager();
+				status.text = mods.length == 0 ? 'Nada encontrado no GameBanana.' : 'GameBanana — página ' + gbPage + '. Escolha um mod para baixar.';
+				fetchCovers(mods);
+
 			case 'list':
+				if (ev.gen != gen)
+					return;
 				if (ev.error != null || ev.mods == null)
 				{
 					general.backend.NFLog.warn('mods', 'lista online indisponível: ' + ev.error);
@@ -155,7 +303,8 @@ class OnlineModsState extends MusicBeatState
 				fetchCovers(mods);
 
 			case 'cover':
-				setCover(ev.index, ev.path);
+				if (ev.gen == gen)
+					setCover(ev.index, ev.path);
 
 			case 'phase':
 				if (ev.progress < 0)
@@ -165,6 +314,7 @@ class OnlineModsState extends MusicBeatState
 
 			case 'done':
 				busy = false;
+				updatePager();
 				if (ev.ok)
 				{
 					var mod:OnlineMod = mods[ev.index];
@@ -263,13 +413,16 @@ class OnlineModsState extends MusicBeatState
 
 	function fetchCovers(list:Array<OnlineMod>):Void
 	{
+		var mine:Int = gen;
 		Thread.create(() ->
 		{
 			for (i in 0...list.length)
 			{
+				if (mine != gen)
+					return;
 				var path:String = OnlineMods.fetchCover(list[i]);
 				if (path != null)
-					events.add({kind: 'cover', index: i, path: path});
+					events.add({kind: 'cover', gen: mine, index: i, path: path});
 			}
 		});
 	}
@@ -298,16 +451,21 @@ class OnlineModsState extends MusicBeatState
 		var mod:OnlineMod = mods[index];
 		status.text = 'Iniciando ' + mod.name + '...';
 		setProgress(0, 'Iniciando download');
+		updatePager();
 		layoutRows();
 
 		Thread.create(() ->
 		{
 			try
 			{
-				OnlineMods.install(mod, function(phase:String, progress:Float)
+				var onPhase:String->Float->Void = function(phase:String, progress:Float)
 				{
 					events.add({kind: 'phase', text: phase + ' ' + mod.name, progress: progress});
-				});
+				};
+				if (GameBananaApi.isGb(mod))
+					GameBananaApi.install(mod, onPhase);
+				else
+					OnlineMods.install(mod, onPhase);
 				events.add({kind: 'done', index: index, ok: true, error: null});
 			}
 			catch (e:Dynamic)
@@ -320,6 +478,7 @@ class OnlineModsState extends MusicBeatState
 	function infoLine(m:OnlineMod):String
 	{
 		var parts:Array<String> = [];
+		if (GameBananaApi.isGb(m)) parts.push('GameBanana');
 		if (m.version != '') parts.push('v' + m.version);
 		if (m.author != '') parts.push(m.author);
 		if (m.size > 0) parts.push(Std.string(Math.round(m.size / 1048576 * 10) / 10) + ' MB');

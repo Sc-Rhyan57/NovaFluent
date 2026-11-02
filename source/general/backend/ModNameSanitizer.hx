@@ -26,6 +26,8 @@ class ModNameSanitizer
 	public static function run(modsRoot:String):Int
 	{
 		#if windows
+		while (modsRoot.length > 1 && StringTools.endsWith(modsRoot, '/'))
+			modsRoot = modsRoot.substr(0, modsRoot.length - 1);
 		if (!FileSystem.exists(modsRoot) || !FileSystem.isDirectory(modsRoot))
 			return 0;
 		buildMap();
