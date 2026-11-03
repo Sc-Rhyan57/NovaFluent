@@ -29,6 +29,8 @@ class MpSocket
 	var peerClosed:Bool = false;
 	var lastPing:Float = 0;
 	var lastSeen:Float = 0;
+	var lastBlocked:Float = -100;
+	var blockedCount:Int = 0;
 
 	public function new(url:String)
 	{
@@ -41,7 +43,7 @@ class MpSocket
 			FlxG.signals.postUpdate.add(frame);
 		}
 
-		ws = new hx.ws.WebSocket(url);
+		ws = new MpWebSocket(url);
 
 		ws.onopen = function()
 		{
@@ -83,7 +85,7 @@ class MpSocket
 		{
 			if (isBlocked(e))
 			{
-				NFLog.warn('net', 'buffer de envio cheio (Blocked), a sala continua');
+				markBlocked();
 				return;
 			}
 			NFLog.warn('net', 'erro no websocket: ' + Std.string(e));
@@ -92,7 +94,7 @@ class MpSocket
 
 		ws.onclose = function(?e:Dynamic)
 		{
-			NFLog.info('net', 'ws fechado' + (e == null ? '' : ' (' + Std.string(e) + ')'));
+			NFLog.info('net', 'ws fechado' + (e == null ? '' : ' (' + Std.string(e) + ')') + ', bloqueios de envio na sessão: ' + blockedCount);
 			open = false;
 			peerClosed = true;
 			if (closedSent)
@@ -105,6 +107,35 @@ class MpSocket
 	public function localTime(serverMs:Float):Float
 	{
 		return serverMs - offset;
+	}
+
+	function markBlocked():Void
+	{
+		lastBlocked = Timer.stamp();
+		blockedCount++;
+		if (blockedCount == 1 || blockedCount % 50 == 0)
+			NFLog.warn('net', 'buffer de envio cheio (Blocked) x' + blockedCount + ', pausando o envio do mod');
+	}
+
+	public function congested():Bool
+	{
+		return Timer.stamp() - lastBlocked < 1.0;
+	}
+
+	public function queuedBytes():Int
+	{
+		var target:Dynamic = ws;
+		if (target == null)
+			return 0;
+		var fn:Dynamic = Reflect.field(target, 'getQueuedBytes');
+		if (fn == null)
+			return 0;
+		return Std.int(Reflect.callMethod(target, fn, []));
+	}
+
+	public function pending():Int
+	{
+		return backlog.length + outbox.length;
 	}
 
 	public function send(obj:Dynamic):Void
@@ -154,6 +185,7 @@ class MpSocket
 		{
 			if (isBlocked(e))
 			{
+				markBlocked();
 				item.at = Timer.stamp() + BLOCKED_RETRY;
 				return;
 			}
@@ -175,6 +207,7 @@ class MpSocket
 		{
 			if (isBlocked(e))
 			{
+				markBlocked();
 				backlog.push({text: text, at: Timer.stamp() + BLOCKED_RETRY});
 				return;
 			}

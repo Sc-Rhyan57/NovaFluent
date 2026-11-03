@@ -45,7 +45,7 @@ typedef ReceiveState =
 
 class MpModTransfer
 {
-	public static final CHUNK_CHARS:Int = 120000;
+	public static final CHUNK_CHARS:Int = 96000;
 	public static final MAX_BYTES:Float = 512 * 1024 * 1024;
 	public static final STAGE_NAMES:Array<String> = ['scripts', 'dados', 'mídia'];
 

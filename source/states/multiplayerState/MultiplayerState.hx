@@ -142,8 +142,9 @@ class MultiplayerState extends MusicBeatState
         var chunkQueue:Array<{to:String, index:Int, total:Int}> = [];
         // Pedaços enviados e ainda não confirmados (modAck), por destinatário.
         var inFlight:Map<String, Int> = new Map();
-        static final CHUNK_WINDOW:Int = 12;
-        static final CHUNKS_PER_FRAME:Int = 4;
+        static final CHUNK_WINDOW:Int = 4;
+        static final CHUNKS_PER_FRAME:Int = 2;
+        static final MAX_QUEUED_BYTES:Int = 262144;
         var incomingQueue:Deque<Dynamic> = null;
         var incomingIndex:Int = 0;
 
@@ -2154,7 +2155,7 @@ class MultiplayerState extends MusicBeatState
                         return;
                 var i:Int = 0;
                 var sent:Int = 0;
-                while (i < chunkQueue.length && sent < CHUNKS_PER_FRAME)
+                while (i < chunkQueue.length && sent < CHUNKS_PER_FRAME && socket.pending() == 0 && socket.queuedBytes() < MAX_QUEUED_BYTES)
                 {
                         var c = chunkQueue[i];
                         var plan:ModPlan = plans.get(c.to);
