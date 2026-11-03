@@ -6,8 +6,8 @@ import sys.thread.Thread;
 
 class MpApi
 {
-	public static final BASE:String = 'https://nfserver.msdoors-gg.workers.dev/api/v1/multiplayer';
-	public static final WS_URL:String = 'wss://nfserver.msdoors-gg.workers.dev/api/v1/multiplayer/socket';
+	public static final BASE:String = 'https://nfserver.rhyanlus424.workers.dev/api/v1/multiplayer';
+	public static final WS_URL:String = 'wss://nfserver.rhyanlus424.workers.dev/api/v1/multiplayer/socket';
 
 	public static var token:String = null;
 	public static var username:String = null;
