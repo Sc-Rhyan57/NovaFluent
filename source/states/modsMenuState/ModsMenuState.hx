@@ -106,6 +106,12 @@ class ModsMenuState extends MusicBeatState
 		if (mod != null)
 			bg.color = mod.bgColor;
 
+		// Icons are decoded lazily (see loadIconsStep): opening this screen no longer
+		// has to read + decode + upload the icon of EVERY mod before the first frame.
+		iconQueue = [for (i in 0...modsGroup.length) i];
+		var startIdx:Int = curSelectedMod;
+		iconQueue.sort(function(a:Int, b:Int):Int return Std.int(Math.abs(a - startIdx) - Math.abs(b - startIdx)));
+
 		//
 		var buttonX = bgList.x;
 		var buttonWidth = Std.int(bgList.width);
@@ -390,8 +396,30 @@ class ModsMenuState extends MusicBeatState
 
 	var holdTime:Float = 0;
 
+	var iconQueue:Array<Int> = [];
+
+	/** Loads pending mod icons until the per-frame time budget is spent (always at least one). */
+	function loadIconsStep():Void
+	{
+		if (iconQueue.length == 0)
+			return;
+		var end:Float = haxe.Timer.stamp() + 0.004;
+		while (iconQueue.length > 0)
+		{
+			var item:ModItem = modsGroup.members[iconQueue.shift()];
+			if (item != null && !item.iconLoaded)
+			{
+				item.ensureIcon();
+				if (haxe.Timer.stamp() >= end)
+					break;
+			}
+		}
+	}
+
 	override function update(elapsed:Float)
 	{
+		loadIconsStep();
+
 		if ((controls.BACK #if android || FlxG.android.justReleased.BACK #end) && hoveringOnMods)
 		{
 			if (colorTween != null)
@@ -777,6 +805,14 @@ class ModsMenuState extends MusicBeatState
 		if (curMod == null)
 			return;
 
+		// the selected mod and its neighbours are on screen: they need their icons now
+		for (i in Std.int(Math.max(0, curSelectedMod - 3))...Std.int(Math.min(modsGroup.length, curSelectedMod + 4)))
+		{
+			var near:ModItem = modsGroup.members[i];
+			if (near != null)
+				near.ensureIcon();
+		}
+
 		if (colorTween != null)
 		{
 			colorTween.cancel();
@@ -986,22 +1022,8 @@ class ModItem extends FlxSpriteGroup
 		text.y -= Std.int(text.height / 2);
 		add(text);
 
-		var isPixel = false;
-		var bmp = Paths.cacheBitmap(Paths.mods('$folder/pack.png'));
-		if (bmp == null)
-		{
-			bmp = Paths.cacheBitmap(Paths.mods('$folder/pack-pixel.png'));
-			isPixel = true;
-		}
-
-		if (bmp != null)
-		{
-			icon.loadGraphic(bmp, true, 150, 150);
-			if (isPixel)
-				icon.antialiasing = false;
-		}
-		else
-			icon.loadGraphic(Paths.image('unknownMod'), true, 150, 150);
+		// placeholder (shared, already cached); the real icon comes from ensureIcon()
+		icon.loadGraphic(Paths.image('unknownMod'), true, 150, 150);
 		icon.scale.set(0.5, 0.5);
 		icon.updateHitbox();
 
@@ -1023,14 +1045,38 @@ class ModItem extends FlxSpriteGroup
 		}
 		text.text = this.name;
 
-		if (bmp != null)
-		{
-			totalFrames = Math.floor(bmp.width / 150) * Math.floor(bmp.height / 150);
-			icon.animation.add("icon", [for (i in 0...totalFrames) i], iconFps);
-			icon.animation.play("icon");
-		}
 		selectBg.scale.set(width + 5, height + 5);
 		selectBg.updateHitbox();
+	}
+
+	public var iconLoaded:Bool = false;
+
+	/** Reads and decodes pack.png / pack-pixel.png the first time it is needed. */
+	public function ensureIcon():Void
+	{
+		if (iconLoaded)
+			return;
+		iconLoaded = true;
+
+		var isPixel = false;
+		var bmp = Paths.cacheBitmap(Paths.mods('$folder/pack.png'));
+		if (bmp == null)
+		{
+			bmp = Paths.cacheBitmap(Paths.mods('$folder/pack-pixel.png'));
+			isPixel = true;
+		}
+		if (bmp == null)
+			return; // keeps the placeholder
+
+		icon.loadGraphic(bmp, true, 150, 150);
+		if (isPixel)
+			icon.antialiasing = false;
+		icon.scale.set(0.5, 0.5);
+		icon.updateHitbox();
+
+		totalFrames = Math.floor(bmp.width / 150) * Math.floor(bmp.height / 150);
+		icon.animation.add("icon", [for (i in 0...totalFrames) i], iconFps);
+		icon.animation.play("icon");
 	}
 }
 

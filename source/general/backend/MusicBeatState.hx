@@ -137,6 +137,12 @@ class MusicBeatState extends FlxUIState
 	{
 		super.destroy();
 
+		// Vídeos de cenário criados por script (ScriptVideoSprite) seguram o libvlc;
+		// liberar aqui evita que fiquem vivos depois que o state fecha.
+		#if (VIDEOS_ALLOWED && hxvlc)
+		general.objects.ScriptVideoSprite.disposeAll();
+		#end
+
 		// Script-created VideoHandlers live below the mouse in FlxG.game rather
 		// than inside this state's member list. A number of hxcodec-era mods
 		// call stop() from onDestroy(), but hxvlc's stop() only halts playback:

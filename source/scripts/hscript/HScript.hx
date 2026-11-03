@@ -326,6 +326,12 @@ class HScript implements ISharedScript {
 		set('FlxText', flixel.text.FlxText);
 		set('FlxCamera', flixel.FlxCamera);
 		set('PsychCamera', general.backend.PsychCamera);
+		#if (VIDEOS_ALLOWED && hxvlc)
+		// Vídeo dentro do cenário: new VideoSprite('videos/x.mp4') -> add / addBehindBF / playVideo() / pauseVideo()
+		// (o player de cutscene continua sendo startVideo(...))
+		set('VideoSprite', general.objects.ScriptVideoSprite);
+		set('ScriptVideoSprite', general.objects.ScriptVideoSprite);
+		#end
 		set('FlxTimer', flixel.util.FlxTimer);
 		set('FlxTween', flixel.tweens.FlxTween);
 		set('FlxEase', flixel.tweens.FlxEase);

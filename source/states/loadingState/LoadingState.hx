@@ -95,11 +95,48 @@ class LoadingState extends MusicBeatState
 
 	function set_loaded(v:Int):Int {
 		_loaded = v;
-		if (loadMax > 0)
-			intendedPercent = _loaded / loadMax;
-		else
+		// With loadMax > 0 the percentage is computed every frame in update():
+		// a file only counts as done after its texture is uploaded to the GPU.
+		if (loadMax <= 0)
 			intendedPercent = 1;
 		return v;
+	}
+
+	// RAM guard: the collector stays off while loading, but a heavy mod must never
+	// be allowed to eat all the memory of the machine.
+	var gcSuspended:Bool = false;
+	var handedToPlayState:Bool = false;
+	static inline var GC_SUSPEND_LIMIT_MB:Float = #if mobile 700 #else 1800 #end;
+
+	function countPendingUploads():Int
+	{
+		var n:Int = 0;
+		for (_ in requestedBitmaps.keys())
+			n++;
+		return n;
+	}
+
+	/**
+	 * Uploads the decoded bitmaps to the GPU a few at a time (time budget per frame)
+	 * instead of all at once at the end, which froze the window (and the loading bar)
+	 * and looked like a hang/crash on heavy mods.
+	 */
+	function drainBitmaps(budget:Float):Void
+	{
+		var start:Float = haxe.Timer.stamp();
+		var done:Array<String> = [];
+		for (key => bitmap in requestedBitmaps)
+		{
+			if (bitmap != null && Paths.cacheBitmap(key, bitmap, false) != null)
+				trace('IMAGE: finished preloading image $key');
+			else
+				trace('IMAGE: failed to cache image $key');
+			done.push(key);
+			if (haxe.Timer.stamp() - start >= budget)
+				break;
+		}
+		for (key in done)
+			requestedBitmaps.remove(key);
 	}
 
 	function set_curPercent(v:Float):Float {
@@ -257,6 +294,7 @@ class LoadingState extends MusicBeatState
 		} catch (e) { JustSay.text = ''; }
 
 		GCManager.enable(false);
+		gcSuspended = true;
 
 		super.create();
 
@@ -307,6 +345,21 @@ class LoadingState extends MusicBeatState
 
 		loads.angle += 1.5;
 
+		if (loadMax > 0)
+		{
+			drainBitmaps(0.006);
+			intendedPercent = Math.max(0, _loaded - countPendingUploads()) / loadMax;
+		}
+
+		#if cpp
+		if (gcSuspended && openfl.system.System.totalMemoryNumber / 1048576.0 > GC_SUSPEND_LIMIT_MB)
+		{
+			trace('LoadingState: memory above ${GC_SUSPEND_LIMIT_MB}MB, re-enabling the collector');
+			GCManager.enable(true);
+			gcSuspended = false;
+		}
+		#end
+
 		if (curPercent != intendedPercent)
 		{
 			if (Math.abs(curPercent - intendedPercent) < 0.005)
@@ -350,6 +403,7 @@ class LoadingState extends MusicBeatState
 		if (isPlayState)
 		{
 			isPlayState = false;
+			handedToPlayState = true;
 			FlxTransitionableState.skipNextTransIn = true;
 			FlxTransitionableState.skipNextTransOut = true;
 			MusicBeatState.switchState(new PlayState());
@@ -363,14 +417,38 @@ class LoadingState extends MusicBeatState
 
 	function checkLoaded():Bool
 	{
-		for (key => bitmap in requestedBitmaps)
+		if (loaded < loadMax)
+			return false;
+		// Everything was decoded; upload what is still waiting (normally nothing,
+		// update() already drained it) and clear it so it is never cached twice.
+		drainBitmaps(1e9);
+		return true;
+	}
+
+	override function destroy()
+	{
+		// If we leave for anywhere other than PlayState (back button, error, cancelled
+		// load) nobody will turn the collector on again.
+		if (!handedToPlayState)
+			GCManager.enable(true);
+		gcSuspended = false;
+
+		if (loadThread != null)
 		{
-			if (bitmap != null && Paths.cacheBitmap(key, bitmap, false) != null) {
-				trace('IMAGE: finished preloading image $key');
-			} else
-				trace('IMAGE: failed to cache image $key');
+			loadThread.cancel();
+			loadThread = null;
 		}
-		return (loaded >= loadMax);
+		if (prepareEvent != null)
+		{
+			prepareEvent.cancel();
+			prepareEvent.destroy();
+			prepareEvent = null;
+		}
+		requestedBitmaps.clear();
+		if (instance == this)
+			instance = null;
+
+		super.destroy();
 	}
 
 	public function startThreads()

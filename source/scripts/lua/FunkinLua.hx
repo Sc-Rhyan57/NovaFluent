@@ -60,6 +60,57 @@ class FunkinLua
 
 	public static var customFunctions:Map<String, Dynamic> = new Map<String, Dynamic>();
 
+	// Sintaxe orientada a objeto para vídeos no cenário:
+	//   local video = VideoSprite('videos/meuvideo.mp4')
+	//   video:screenCenter(); video:setScrollFactor(); video:scale(1.2, 1.2)
+	//   addBehindBF(video); video:play()
+	//   ... video:pause() / video:resume() / video:stop() / video:destroy()
+	#if (VIDEOS_ALLOWED && hxvlc)
+	static final VIDEO_PRELUDE:String = "
+local __vidCount = 0
+local VS = {}
+VS.__index = VS
+
+function VideoSprite(path, x, y, loop, autoPlay)
+	__vidCount = __vidCount + 1
+	local self = setmetatable({}, VS)
+	self.tag = '__videoSprite' .. __vidCount
+	self.ok = makeVideoSprite(self.tag, path, x, y, loop or false, autoPlay or false)
+	return self
+end
+
+function VS:play() return playVideoSprite(self.tag) end
+function VS:pause() pauseVideoSprite(self.tag) end
+function VS:resume() resumeVideoSprite(self.tag) end
+function VS:stop() stopVideoSprite(self.tag) end
+function VS:setVolume(v) setVideoSpriteVolume(self.tag, v) end
+function VS:isPlaying() return isVideoSpritePlaying(self.tag) end
+function VS:destroy() removeVideoSprite(self.tag) end
+function VS:screenCenter(axes) screenCenter(self.tag, axes or 'xy') end
+function VS:setScrollFactor(x, y) setScrollFactor(self.tag, x or 0, y or 0) end
+function VS:scale(x, y) scaleObject(self.tag, x or 1, y or x or 1) end
+function VS:setPosition(x, y) setProperty(self.tag .. '.x', x) setProperty(self.tag .. '.y', y) end
+function VS:setAlpha(a) setProperty(self.tag .. '.alpha', a) end
+function VS:setCamera(cam) setObjectCamera(self.tag, cam) end
+
+local function unwrap(name)
+	local orig = _G[name]
+	if orig == nil then return end
+	_G[name] = function(a, ...)
+		if type(a) == 'table' and a.tag ~= nil then a = a.tag end
+		return orig(a, ...)
+	end
+end
+unwrap('addBehindBF')
+unwrap('addBehindDad')
+unwrap('addBehindGF')
+unwrap('addLuaSprite')
+unwrap('setObjectOrder')
+unwrap('setObjectCamera')
+unwrap('removeVideoSprite')
+";
+	#end
+
 	public function new(scriptName:String)
 	{
 		#if LUA_ALLOWED
@@ -1657,6 +1708,132 @@ class FunkinLua
 		}
 			return false;
 		});
+		// ---------------------------------------------------------------------------
+		// Vídeo dentro do cenário (não é cutscene): ScriptVideoSprite
+		//   makeVideoSprite(tag, 'videos/arquivo.mp4', x, y, loop, autoPlay)
+		//   playVideoSprite / pauseVideoSprite / resumeVideoSprite / stopVideoSprite (tag)
+		//   setVideoSpriteVolume(tag, 0..1) / isVideoSpritePlaying(tag) / removeVideoSprite(tag)
+		//   addBehindBF(tag) / addBehindDad(tag) / addBehindGF(tag)
+		//   callback onVideoSpriteEnd(tag) quando um vídeo sem loop termina
+		// Também dá pra usar a sintaxe orientada a objeto (veja VIDEO_PRELUDE).
+		// ---------------------------------------------------------------------------
+		#if (VIDEOS_ALLOWED && hxvlc)
+		set("makeVideoSprite", function(tag:String, video:String, ?x:Float, ?y:Float, ?loop:Bool = false, ?autoPlay:Bool = false)
+		{
+			tag = tag.replace('.', '');
+			var old:Dynamic = game.variables.get(tag);
+			if (old != null && Std.isOfType(old, general.objects.ScriptVideoSprite))
+			{
+				var oldVideo:general.objects.ScriptVideoSprite = cast old;
+				LuaUtils.getTargetInstance().remove(oldVideo, true);
+				oldVideo.destroy();
+				game.variables.remove(tag);
+			}
+
+			var v:general.objects.ScriptVideoSprite = new general.objects.ScriptVideoSprite(video, x, y, loop);
+			if (!v.videoFound)
+			{
+				luaTrace('makeVideoSprite: video not found: ' + video, false, false, FlxColor.RED);
+				v.destroy();
+				return false;
+			}
+			v.onEnd = function() game.callOnLuas('onVideoSpriteEnd', [tag]);
+			game.variables.set(tag, v);
+			if (autoPlay)
+				v.playVideo();
+			return true;
+		});
+
+		function getVideoSprite(fn:String, tag:String):general.objects.ScriptVideoSprite
+		{
+			var o:Dynamic = game.variables.get(tag);
+			if (o == null || !Std.isOfType(o, general.objects.ScriptVideoSprite))
+			{
+				luaTrace('$fn: video sprite "$tag" does not exist!', false, false, FlxColor.RED);
+				return null;
+			}
+			return cast o;
+		}
+
+		set("playVideoSprite", function(tag:String)
+		{
+			var v = getVideoSprite('playVideoSprite', tag);
+			return v != null ? v.playVideo() : false;
+		});
+		set("pauseVideoSprite", function(tag:String)
+		{
+			var v = getVideoSprite('pauseVideoSprite', tag);
+			if (v != null)
+				v.pauseVideo();
+		});
+		set("resumeVideoSprite", function(tag:String)
+		{
+			var v = getVideoSprite('resumeVideoSprite', tag);
+			if (v != null)
+				v.resumeVideo();
+		});
+		set("stopVideoSprite", function(tag:String)
+		{
+			var v = getVideoSprite('stopVideoSprite', tag);
+			if (v != null)
+				v.stopVideo();
+		});
+		set("setVideoSpriteVolume", function(tag:String, volume:Float)
+		{
+			var v = getVideoSprite('setVideoSpriteVolume', tag);
+			if (v != null)
+				v.setVideoVolume(volume);
+		});
+		set("isVideoSpritePlaying", function(tag:String)
+		{
+			var o:Dynamic = game.variables.get(tag);
+			return o != null && Std.isOfType(o, general.objects.ScriptVideoSprite) && cast(o, general.objects.ScriptVideoSprite).playing;
+		});
+		set("removeVideoSprite", function(tag:String)
+		{
+			var o:Dynamic = game.variables.get(tag);
+			if (o == null || !Std.isOfType(o, general.objects.ScriptVideoSprite))
+				return;
+			var v:general.objects.ScriptVideoSprite = cast o;
+			FlxTween.cancelTweensOf(v);
+			LuaUtils.getTargetInstance().remove(v, true);
+			game.variables.remove(tag);
+			v.destroy();
+		});
+		#end
+
+		function addBehindChar(fn:String, tag:String, where:Int):Bool
+		{
+			var mySprite:FlxSprite = null;
+			if (game.modchartSprites.exists(tag))
+				mySprite = game.modchartSprites.get(tag);
+			else if (game.variables.exists(tag))
+				mySprite = game.variables.get(tag);
+
+			if (mySprite == null)
+			{
+				luaTrace('$fn: object "$tag" does not exist!', false, false, FlxColor.RED);
+				return false;
+			}
+			if (mySprite.alreadyAdded)
+				return false;
+
+			switch (where)
+			{
+				case 0:
+					game.addBehindBF(mySprite);
+				case 1:
+					game.addBehindDad(mySprite);
+				default:
+					game.addBehindGF(mySprite);
+			}
+			mySprite.alreadyAdded = true;
+			return true;
+		}
+		set("addBehindBF", function(tag:String) return addBehindChar('addBehindBF', tag, 0));
+		set("addBehindDad", function(tag:String) return addBehindChar('addBehindDad', tag, 1));
+		set("addBehindGF", function(tag:String) return addBehindChar('addBehindGF', tag, 2));
+
 		Lua_helper.add_callback(lua, "startVideo",
 			function(videoFile:String, ?canSkip:Bool = true, ?forMidSong:Bool = false, ?shouldLoop:Bool = false, ?playOnLoad:Bool = true)
 			{
@@ -1894,6 +2071,10 @@ class FunkinLua
 		CustomSubstate.implement(this);
 		ShaderFunctions.implement(this);
 		DeprecatedFunctions.implement(this);
+
+		#if (VIDEOS_ALLOWED && hxvlc)
+		LuaL.dostring(lua, VIDEO_PRELUDE);
+		#end
 
 		try
 		{

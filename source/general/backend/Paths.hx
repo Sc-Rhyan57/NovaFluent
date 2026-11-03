@@ -32,7 +32,21 @@ class Paths
 		return path;
 	}
 
-	static function releaseGraphicWhenUnused(graphic:FlxGraphic):Void
+	/** True se o gráfico rastreado existe e ainda é utilizável (senão remove a entrada velha). */
+	static function trackedAlive(file:String):Bool
+	{
+		var g:FlxGraphic = Cache.currentTrackedAssets.get(file);
+		if (g == null)
+			return false;
+		if (g.isDestroyed || g.bitmap == null)
+		{
+			Cache.currentTrackedAssets.remove(file);
+			return false;
+		}
+		return true;
+	}
+
+	static function releaseGraphicWhenUnused(graphic:FlxGraphic, ?removeNow:Bool = true):Void
 	{
 		if (graphic == null || graphic.isDestroyed)
 			return;
@@ -41,14 +55,28 @@ class Paths
 		// active sprites valid and let the final owner release the graphic.
 		graphic.persist = false;
 		graphic.destroyOnNoUse = true;
+
+		// O flixel só destrói um gráfico no instante em que o useCount CAI para 0.
+		// Um gráfico que já está em 0 (os sprites da música foram destruídos antes
+		// do menu abrir) nunca recebia esse evento e ficava no cache para sempre,
+		// junto com a textura da GPU. Sem dono nenhum, é seguro liberar agora.
+		if (removeNow && graphic.useCount <= 0)
+			FlxG.bitmap.remove(graphic);
 	}
+
+	/**
+	 * Marcado quando uma música/mod foi fechado. O próximo clearUnusedMemory() faz UM
+	 * GC completo (escondido atrás da transição do menu) em vez de deixar o lixo da
+	 * música acumulando e disparando coletas no meio do próximo jogo.
+	 */
+	public static var memoryDirty:Bool = false;
 
 	public static function clearStoredMemory()
 	{
 		var clearStarted:Float = haxe.Timer.stamp();
 		// clear anything not in the tracked assets list
 		@:privateAccess
-		for (key in FlxG.bitmap._cache.keys())
+		for (key in [for (k in FlxG.bitmap._cache.keys()) k])
 		{
 			if (key == null) continue;
 			var obj = FlxG.bitmap._cache.get(key);
@@ -69,7 +97,11 @@ class Paths
 			if (graphic == null && cached.frame != null)
 				graphic = cached.frame.parent;
 
-			releaseGraphicWhenUnused(graphic);
+			// Se o gráfico ainda está na lista de rastreados, quem remove (e libera) é o
+			// clearUnusedMemory(); apagar aqui deixaria uma entrada velha apontando
+			// para um gráfico destruído.
+			var gk:String = graphic != null ? graphic.key : null;
+			releaseGraphicWhenUnused(graphic, gk == null || !Cache.currentTrackedAssets.exists(gk));
 		}
 
 		for (key in Cache.currentTrackedAnims.keys())
@@ -106,7 +138,7 @@ class Paths
 	}
 
 	/// haya I love you for the base cache dump I took to the max
-	public static function clearUnusedMemory(?requestMajorGc:Bool = false)
+	public static function clearUnusedMemory(?requestMajorGc:Bool = false, ?allowDeferredGc:Bool = true)
 	{
 		var clearStarted:Float = haxe.Timer.stamp();
 		// clear non local assets in the tracked assets list
@@ -125,18 +157,20 @@ class Paths
 			}
 		}
 
-		// Ordinary page transitions only release caches. A forced full cycle can
-		// still have a short remark pause, so let NovaGC's allocation/promotion
-		// policy schedule it unless a caller explicitly requests memory pressure
-		// relief. This prevents every menu switch from creating a GC hitch.
-		if (requestMajorGc)
-			#if legacy_gc_compare
-			//cpp.vm.Gc.run(true);
-			#else
-			//GCManager.requestFull();
-			#end
-
+		// Ordinary page transitions only release caches (no forced GC => no hitch on
+		// every menu switch). The exception is right after a song/mod was closed: its
+		// whole object graph is garbage at once, so collect it now, while the screen
+		// is still covered by the transition, instead of during the next song.
+		var needGc:Bool = requestMajorGc || (allowDeferredGc && memoryDirty);
+		if (needGc || !allowDeferredGc)
+			memoryDirty = false;
+		#if cpp
+		if (needGc)
+		{
+			GCManager.enable(true);
 			cpp.vm.Gc.run(true);
+		}
+		#end
 	}
 
 	///////////////////////////////////////////上面是缓存清除功能，下面是路径功能
@@ -437,7 +471,7 @@ class Paths
 		#if MODS_ALLOWED
 		file = modsImages(key);
 
-		if (Cache.currentTrackedAssets.exists(file))
+		if (trackedAlive(file))
 		{
 			Cache.trackLocalAsset(file);
 			return Cache.currentTrackedAssets.get(file);
@@ -448,7 +482,7 @@ class Paths
 		#end
 		{
 			file = getPath('images/$key.png', IMAGE, library);
-			if (Cache.currentTrackedAssets.exists(file))
+			if (trackedAlive(file))
 			{
 				Cache.trackLocalAsset(file);
 				return Cache.currentTrackedAssets.get(file);
@@ -476,7 +510,7 @@ class Paths
 		#if MODS_ALLOWED
 		file = modsExImages(key);
 
-		if (Cache.currentTrackedAssets.exists(file))
+		if (trackedAlive(file))
 		{
 			Cache.trackLocalAsset(file);
 			return Cache.currentTrackedAssets.get(file);
@@ -487,7 +521,7 @@ class Paths
 		#end
 		{
 			file = getPath('images/$key.png', IMAGE, library);
-			if (Cache.currentTrackedAssets.exists(file))
+			if (trackedAlive(file))
 			{
 				Cache.trackLocalAsset(file);
 				return Cache.currentTrackedAssets.get(file);

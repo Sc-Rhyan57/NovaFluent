@@ -961,7 +961,7 @@ class PlayState extends MusicBeatState
                 callOnScripts('onCreateFinal');
 
                 GCManager.enable(true);
-                Paths.clearUnusedMemory(false);
+                Paths.clearUnusedMemory(false, false);
 
                 if (eventNotes.length < 1)
                         checkEventNote();
@@ -2341,6 +2341,9 @@ class PlayState extends MusicBeatState
                 stagesFunc(function(stage:BaseStage) stage.openSubState(SubState));
                 if (paused)
                 {
+                        #if (VIDEOS_ALLOWED && hxvlc)
+                        general.objects.ScriptVideoSprite.pauseAll();
+                        #end
                         if (FlxG.sound.music != null)
                         {
                                 FlxG.sound.music.pause();
@@ -2384,6 +2387,10 @@ class PlayState extends MusicBeatState
                                 tmr.active = true);
                         FlxTween.globalManager.forEach(function(twn:FlxTween) if (!twn.finished)
                                 twn.active = true);
+
+                        #if (VIDEOS_ALLOWED && hxvlc)
+                        general.objects.ScriptVideoSprite.resumeAll();
+                        #end
 
                         MpMatch.sendResume();
                         paused = false;
@@ -5446,6 +5453,11 @@ class PlayState extends MusicBeatState
                 destroying = true;
                 resumeGameplayGcAfterSubstate = false;
                 GameplayGC.abort();
+
+                // Se o create() falhou no meio (erro de script, mod quebrado) o GC ficava
+                // desligado para sempre e a RAM só crescia. Religa sempre ao sair.
+                GCManager.enable(true);
+                Paths.memoryDirty = true;
 
                 // Stop any in-flight video before the Haxe object graph goes away.
                 killVideoCutscene();

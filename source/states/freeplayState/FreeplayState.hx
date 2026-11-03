@@ -152,6 +152,12 @@ class FreeplayState extends MusicBeatState
 	{
 		super.create();
 
+		// Freeplay is where you land after a song/mod: every other menu already drops
+		// the previous state's assets here, this one did not, so the song's textures,
+		// sounds and frames stayed in memory (and the next song started laggy).
+		Paths.clearStoredMemory();
+		Paths.clearUnusedMemory();
+
 		Song.forceEngineVersion = null;
 
 		instance = this;
