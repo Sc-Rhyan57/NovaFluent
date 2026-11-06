@@ -81,7 +81,7 @@ jobs:
             echo "**Commit:** \`$COMMIT_SHA\`"
             echo "**Run:** #${{ github.run_number }}"
             echo ""
-            echo "Os binários de cada plataforma serão anexados conforme os builds forem concluídos."
+            echo "multiplayer added by: rhyan57"
           } > RELEASE_NOTES.md
 
           gh release create "$TAG" \
