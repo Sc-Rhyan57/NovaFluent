@@ -2079,13 +2079,9 @@ unwrap('removeVideoSprite')
 
                 try
                 {
-                        // --- Trailing-dot / trailing-space file name fix ---
-                        // If the scriptName ends with '.' or ' ' (e.g. "Arquivolua.lua."),
-                        // Windows can't open it. Resolve to the sanitized on-disk path first.
                         var resolved:String = ScriptFileSanitizer.resolveScriptPath(scriptName);
                         if (resolved != null)
                                 scriptName = resolved;
-
                         var isString:Bool = !FileSystem.exists(scriptName);
                         var result:Dynamic = null;
                         if (!isString)
@@ -2337,11 +2333,6 @@ unwrap('removeVideoSprite')
                 {
                         return preloadPath;
                 }
-
-                // --- Trailing-dot / trailing-space file name fix ---
-                // Some script files are received as e.g. "Arquivolua.lua." (with a trailing
-                // period) which Windows refuses to open. Try the sanitized variants of
-                // every path before giving up. See games.backend.ScriptFileSanitizer.
                 var sPreload:String = ScriptFileSanitizer.sanitizePath(preloadPath);
                 #if MODS_ALLOWED
                 var sPath:String = ScriptFileSanitizer.sanitizePath(path);
@@ -2356,7 +2347,6 @@ unwrap('removeVideoSprite')
                 if (sPreload != preloadPath && Assets.exists(sPreload))
                         return sPreload;
                 #end
-
                 return null;
         }
 
