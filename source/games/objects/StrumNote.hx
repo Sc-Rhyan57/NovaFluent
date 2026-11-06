@@ -1,6 +1,7 @@
 package games.objects;
 
 import flixel.FlxBasic;
+import flixel.FlxG;
 
 import general.backend.InputFormatter;
 import general.backend.MpMatch;
@@ -12,403 +13,459 @@ import general.shaders.ColorSwap;
 
 class StrumNote extends FlxSprite
 {
-	public var rgbShader:RGBShaderReference;
+        public var rgbShader:RGBShaderReference;
 
-	public var resetAnim:Float = 0;
-	public var confirmStamp:Float = -1;
-	static final CONFIRM_MIN:Float = 0.07;
-	public var colorSwap:ColorSwap;
-	private var noteData:Int = 0;
+        public var resetAnim:Float = 0;
+        public var confirmStamp:Float = -1;
+        static final CONFIRM_MIN:Float = 0.07;
+        public var colorSwap:ColorSwap;
+        private var noteData:Int = 0;
 
-	public var direction:Float = 90; // plan on doing scroll directions soon -bb
-	public var downScroll:Bool = false; // plan on doing scroll directions soon -bb
-	public var sustainReduce:Bool = true;
+        public var direction:Float = 90; // plan on doing scroll directions soon -bb
+        public var downScroll:Bool = false; // plan on doing scroll directions soon -bb
+        public var sustainReduce:Bool = true;
 
-	public var trackedScale:Float = 0.7;
-	public var player:Int;
-	private var initialWidth:Float = 0;
+        public var trackedScale:Float = 0.7;
+        public var player:Int;
+        private var initialWidth:Float = 0;
 
-	public var texture(default, set):String = null;
+        public var texture(default, set):String = null;
 
-	private function set_texture(value:String):String
-	{
-		if (texture != value)
-		{
-			texture = value;
-			reloadNote();
-		}
-		return value;
-	}
+        private function set_texture(value:String):String
+        {
+                if (texture != value)
+                {
+                        texture = value;
+                        reloadNote();
+                }
+                return value;
+        }
 
-	public var useRGBShader:Bool = true;
+        public var useRGBShader:Bool = true;
 
-	public function new(x:Float, y:Float, leData:Int, player:Int)
-	{
-		animation = new PsychAnimationController(this);
+        // ===================================================================================
+        // ANTI-INVISIBILITY GUARD — see Note.hx for the full explanation.
+        // -----------------------------------------------------------------------------------
+        // `forceVisible` (per-strum) and `Note.visibilityGuardEnabled` (global) control
+        // whether this strum is restored when a Lua script forces alpha = 0 while notes
+        // are following it. `activeNotesCount` is incremented/decremented by Note
+        // itself in followStrumNote / destroy.
+        // ===================================================================================
+        public var forceVisible:Bool = true;
+        public var activeNotesCount:Int = 0;
 
-		rgbShader = new RGBShaderReference(this, Note.initializeGlobalRGBShader(leData));
-		rgbShader.enabled = false;
-		if (PlayState.SONG != null && (PlayState.SONG.disableNoteRGB || !ClientPrefs.data.noteRGB || ClientPrefs.data.noteColorSwap))
-			useRGBShader = false;
-		if (ClientPrefs.data.noteColorSwap){
-		colorSwap = new ColorSwap();
-		shader = colorSwap.shader;
-		}
-		//先不改mania，要魔改的玩意好像还不少呢，先加上再说		//算了懒了，能跑起来就不改了————卡昔233
-		var mania = 3;
-		if (PlayState.SONG != null)
-			mania = PlayState.SONG.mania;
+        // Expected on-screen position (set in centerStrum). Used to recover the strum
+        // if a script teleports it way off-screen while notes are present.
+        public var expectedX:Float = 0;
+        public var expectedY:Float = 0;
 
-		var arrowRGBIndex = getIndex(mania, leData);
+        public function new(x:Float, y:Float, leData:Int, player:Int)
+        {
+                animation = new PsychAnimationController(this);
 
-		var arr:Array<FlxColor> = ClientPrefs.data.arrowRGB[arrowRGBIndex];
+                rgbShader = new RGBShaderReference(this, Note.initializeGlobalRGBShader(leData));
+                rgbShader.enabled = false;
+                if (PlayState.SONG != null && (PlayState.SONG.disableNoteRGB || !ClientPrefs.data.noteRGB || ClientPrefs.data.noteColorSwap))
+                        useRGBShader = false;
+                if (ClientPrefs.data.noteColorSwap){
+                colorSwap = new ColorSwap();
+                shader = colorSwap.shader;
+                }
+                //先不改mania，要魔改的玩意好像还不少呢，先加上再说           //算了懒了，能跑起来就不改了————卡昔233
+                var mania = 3;
+                if (PlayState.SONG != null)
+                        mania = PlayState.SONG.mania;
 
-		if (PlayState.isPixelStage)
-			arr = ClientPrefs.data.arrowRGBPixel[arrowRGBIndex];
+                var arrowRGBIndex = getIndex(mania, leData);
 
-		@:bypassAccessor
-		{
-			rgbShader.r = arr[0];
-			rgbShader.g = arr[1];
-			rgbShader.b = arr[2];
-		}
+                var arr:Array<FlxColor> = ClientPrefs.data.arrowRGB[arrowRGBIndex];
 
-		noteData = leData;
-		this.player = player;
-		this.noteData = leData;
-		super(x, y);
+                if (PlayState.isPixelStage)
+                        arr = ClientPrefs.data.arrowRGBPixel[arrowRGBIndex];
 
-		var skin:String = null;
-		var pixelPath:String = PlayState.isPixelStage ? 'pixelUI/' : '';
+                @:bypassAccessor
+                {
+                        rgbShader.r = arr[0];
+                        rgbShader.g = arr[1];
+                        rgbShader.b = arr[2];
+                }
 
-		if (Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')) == null || Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')).skin == null)
-			Note.init();
+                noteData = leData;
+                this.player = player;
+                this.noteData = leData;
+                super(x, y);
 
-		skin = pixelPath + Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')).skin + Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')).skinPostfix;
-			
-		texture = skin; // Load texture and anims
-		scrollFactor.set();
+                var skin:String = null;
+                var pixelPath:String = PlayState.isPixelStage ? 'pixelUI/' : '';
 
-		shaderInit();
-	}
+                if (Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')) == null || Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')).skin == null)
+                        Note.init();
 
-	public function reloadNote()
-	{
-		var lastAnim:String = null;
-		if (animation.curAnim != null)
-			lastAnim = animation.curAnim.name;
+                skin = pixelPath + Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')).skin + Note.loadedNote.get(Note.getLoadDataKey(Note.defaultNoteSkin, '')).skinPostfix;
+                        
+                texture = skin; // Load texture and anims
+                scrollFactor.set();
 
-		var mania = 3;
-		if (PlayState.SONG != null) mania = PlayState.SONG.mania;
+                shaderInit();
+        }
 
-		if (PlayState.isPixelStage)
-		{
-			loadGraphic(Paths.image(texture));
-			width = width / 4;	//idk
-			height = height / 5;
-			loadGraphic(Paths.image(texture), true, Math.floor(width), Math.floor(height));
+        public function reloadNote()
+        {
+                var lastAnim:String = null;
+                if (animation.curAnim != null)
+                        lastAnim = animation.curAnim.name;
 
-			antialiasing = false;
+                var mania = 3;
+                if (PlayState.SONG != null) mania = PlayState.SONG.mania;
 
-			antialiasing = false;
+                if (PlayState.isPixelStage)
+                {
+                        loadGraphic(Paths.image(texture));
+                        width = width / 4;      //idk
+                        height = height / 5;
+                        loadGraphic(Paths.image(texture), true, Math.floor(width), Math.floor(height));
 
-			initialWidth = width;
-			//trace(initialWidth);
+                        antialiasing = false;
 
-			var pixelScale:Float = ExtraKeysHandler.instance.data.pixelScales != null && mania < ExtraKeysHandler.instance.data.pixelScales.length ? ExtraKeysHandler.instance.data.pixelScales[mania] : 0.7;
-			setGraphicSize((width * (pixelScale + 0.3)) * PlayState.daPixelZoom);
-			trackedScale = pixelScale;
+                        antialiasing = false;
 
-			var noteAnimInt = getAnimSet(getIndex(mania, noteData)).pixel;
+                        initialWidth = width;
+                        //trace(initialWidth);
 
-			//animation.add('circle', [11]);
-			//animation.add('rombus', [10]);
-			animation.add('red', [9]);
-			animation.add('green', [8]);
-			animation.add('blue', [7]);
-			animation.add('purple', [6]);
+                        var pixelScale:Float = ExtraKeysHandler.instance.data.pixelScales != null && mania < ExtraKeysHandler.instance.data.pixelScales.length ? ExtraKeysHandler.instance.data.pixelScales[mania] : 0.7;
+                        setGraphicSize((width * (pixelScale + 0.3)) * PlayState.daPixelZoom);
+                        trackedScale = pixelScale;
 
-			animation.add('static', [noteAnimInt]);
-			animation.add('pressed', [noteAnimInt + 4, noteAnimInt + 8], 12, false);
-			animation.add('confirm', [noteAnimInt + 12, noteAnimInt + 16], 24, false);
+                        var noteAnimInt = getAnimSet(getIndex(mania, noteData)).pixel;
 
-		}
-		else
-		{
-			frames = Paths.getSparrowAtlas(texture);
-			animation.addByPrefix('green', 'arrowUP');
-			animation.addByPrefix('blue', 'arrowDOWN');
-			animation.addByPrefix('purple', 'arrowLEFT');
-			animation.addByPrefix('red', 'arrowRIGHT');
+                        //animation.add('circle', [11]);
+                        //animation.add('rombus', [10]);
+                        animation.add('red', [9]);
+                        animation.add('green', [8]);
+                        animation.add('blue', [7]);
+                        animation.add('purple', [6]);
 
-			initialWidth = width;	//我勒个一行造成死循环————卡昔233
+                        animation.add('static', [noteAnimInt]);
+                        animation.add('pressed', [noteAnimInt + 4, noteAnimInt + 8], 12, false);
+                        animation.add('confirm', [noteAnimInt + 12, noteAnimInt + 16], 24, false);
 
-			antialiasing = ClientPrefs.data.antialiasing;
-			trackedScale = ExtraKeysHandler.instance.data.scales != null && mania < ExtraKeysHandler.instance.data.scales.length ? ExtraKeysHandler.instance.data.scales[mania] : 0.7;
-			setGraphicSize(width * trackedScale);
+                }
+                else
+                {
+                        frames = Paths.getSparrowAtlas(texture);
+                        animation.addByPrefix('green', 'arrowUP');
+                        animation.addByPrefix('blue', 'arrowDOWN');
+                        animation.addByPrefix('purple', 'arrowLEFT');
+                        animation.addByPrefix('red', 'arrowRIGHT');
 
-			animation.addByPrefix('static', 'arrow${getAnimSet(getIndex(mania, noteData)).strum}');
-			animation.addByPrefix('pressed', '${getAnimSet(getIndex(mania, noteData)).anim} press', 24, false);
-			animation.addByPrefix('confirm', '${getAnimSet(getIndex(mania, noteData)).anim} confirm', 24, false);
+                        initialWidth = width;   //我勒个一行造成死循环————卡昔233
 
-		}
-		updateHitbox();
+                        antialiasing = ClientPrefs.data.antialiasing;
+                        trackedScale = ExtraKeysHandler.instance.data.scales != null && mania < ExtraKeysHandler.instance.data.scales.length ? ExtraKeysHandler.instance.data.scales[mania] : 0.7;
+                        setGraphicSize(width * trackedScale);
 
-		if (lastAnim != null)
-		{
-			playAnim(lastAnim, true);
-		}
-	}
+                        animation.addByPrefix('static', 'arrow${getAnimSet(getIndex(mania, noteData)).strum}');
+                        animation.addByPrefix('pressed', '${getAnimSet(getIndex(mania, noteData)).anim} press', 24, false);
+                        animation.addByPrefix('confirm', '${getAnimSet(getIndex(mania, noteData)).anim} confirm', 24, false);
 
-	public function retryBound()
-	{
-		trackedScale = trackedScale * 0.85;
-		setGraphicSize(initialWidth * (trackedScale * (PlayState.isPixelStage ? PlayState.daPixelZoom /** (1/ExtraKeysHandler.instance.data.pixelScales[PlayState.SONG.mania])) */ : 1)));
-		trace(trackedScale);
-		updateHitbox();
-		postAddedToGroup();
-	}
+                }
+                updateHitbox();
 
-	public function postAddedToGroup()
-	{
-		playAnim('static');
-		var padding:Float = 0;
-		var minPaddingStartThresh:Int = 4;
-		// if (PlayState.isPixelStage) minPaddingStartThresh = 3;
-		if (PlayState.SONG.mania > minPaddingStartThresh)
-		{
-			padding = 4 * (PlayState.SONG.mania - minPaddingStartThresh);
-			if (padding > 8)
-				padding = 8;
-		}
-		// trace(padding);
+                if (lastAnim != null)
+                {
+                        playAnim(lastAnim, true);
+                }
+        }
 
-		// x = StrumBoundaries.getMiddlePoint().x;
-		// x += ((Note.swagWidthUnscaled * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
-		// x += 25;
-		// x += ((FlxG.width / 2) * player);
-		ID = noteData;
+        public function retryBound()
+        {
+                trackedScale = trackedScale * 0.85;
+                setGraphicSize(initialWidth * (trackedScale * (PlayState.isPixelStage ? PlayState.daPixelZoom /** (1/ExtraKeysHandler.instance.data.pixelScales[PlayState.SONG.mania])) */ : 1)));
+                trace(trackedScale);
+                updateHitbox();
+                postAddedToGroup();
+        }
 
-		centerStrum(minPaddingStartThresh, padding);
-	}
+        public function postAddedToGroup()
+        {
+                playAnim('static');
+                var padding:Float = 0;
+                var minPaddingStartThresh:Int = 4;
+                // if (PlayState.isPixelStage) minPaddingStartThresh = 3;
+                if (PlayState.SONG.mania > minPaddingStartThresh)
+                {
+                        padding = 4 * (PlayState.SONG.mania - minPaddingStartThresh);
+                        if (padding > 8)
+                                padding = 8;
+                }
+                // trace(padding);
 
-	/**
-	 * Please refrain from asking me what happens here
-	 * @param maniaThresh I don't know
-	 * @param padding I don't know
-	 */
-	public function centerStrum(maniaThresh:Int, padding:Float)
-	{
-		var sWidth = /*(PlayState.isPixelStage && PlayState.SONG.mania > maniaThresh) ? (180 + ((10 + (5 * (PlayState.SONG.mania - maniaThresh))) * (PlayState.SONG.mania - maniaThresh))) : */ Note.swagWidthUnscaled;
-		if (!MpMatch.middleScroll())
-		{
-			var leftSide:Bool = player == 0;
-			if (MpMatch.active && !MpMatch.isHost)
-				leftSide = !leftSide;
-			x = leftSide ? 320 : 960;
-			x += ((sWidth * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
-		}
-		else
-		{
-			var controlledPlayer:Int = MpMatch.playsOpponent() ? 0 : 1;
-			if (player == controlledPlayer)
-				x = 640;
-			else
-			{
-				x = 320;
-				if (noteData > Math.floor((PlayState.SONG.mania / 2)))
-					x = 960;
-			}
-			x += ((sWidth * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
-		}
-		// trace(padding);
-	}
+                // x = StrumBoundaries.getMiddlePoint().x;
+                // x += ((Note.swagWidthUnscaled * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
+                // x += 25;
+                // x += ((FlxG.width / 2) * player);
+                ID = noteData;
 
-	override function update(elapsed:Float)
-	{
-		if (resetAnim > 0)
-		{
-			resetAnim -= elapsed;
-			if (resetAnim <= 0)
-			{
-				playAnim('static');
-				resetAnim = 0;
-			}
-		}
-		super.update(elapsed);
-	}
+                centerStrum(minPaddingStartThresh, padding);
+        }
 
-	public function release():Void
-	{
-		if (animation.curAnim != null && animation.curAnim.name == 'confirm' && confirmStamp >= 0)
-		{
-			var shown:Float = haxe.Timer.stamp() - confirmStamp;
-			if (shown < CONFIRM_MIN)
-			{
-				resetAnim = CONFIRM_MIN - shown;
-				return;
-			}
-		}
-		playAnim('static');
-		resetAnim = 0;
-	}
+        /**
+         * Please refrain from asking me what happens here
+         * @param maniaThresh I don't know
+         * @param padding I don't know
+         */
+        public function centerStrum(maniaThresh:Int, padding:Float)
+        {
+                var sWidth = /*(PlayState.isPixelStage && PlayState.SONG.mania > maniaThresh) ? (180 + ((10 + (5 * (PlayState.SONG.mania - maniaThresh))) * (PlayState.SONG.mania - maniaThresh))) : */ Note.swagWidthUnscaled;
+                if (!MpMatch.middleScroll())
+                {
+                        var leftSide:Bool = player == 0;
+                        if (MpMatch.active && !MpMatch.isHost)
+                                leftSide = !leftSide;
+                        x = leftSide ? 320 : 960;
+                        x += ((sWidth * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
+                }
+                else
+                {
+                        var controlledPlayer:Int = MpMatch.playsOpponent() ? 0 : 1;
+                        if (player == controlledPlayer)
+                                x = 640;
+                        else
+                        {
+                                x = 320;
+                                if (noteData > Math.floor((PlayState.SONG.mania / 2)))
+                                        x = 960;
+                        }
+                        x += ((sWidth * trackedScale) - padding) * (-((PlayState.SONG.mania + 1) / 2) + noteData);
+                }
+                // trace(padding);
 
-	public function playAnim(anim:String, ?force:Bool = false)
-	{
-		if (anim == 'confirm')
-		{
-			confirmStamp = haxe.Timer.stamp();
-			resetAnim = 0;
-		}
-		animation.play(anim, force);
-		if (animation.curAnim != null)
-		{
-			centerOffsets();
-			centerOrigin();
-		}
-		if (useRGBShader)
-			rgbShader.enabled = (animation.curAnim != null && animation.curAnim.name != 'static');
-		else if (ClientPrefs.data.noteColorSwap){
-			if(animation.curAnim == null || animation.curAnim.name == 'static') {
-			colorSwap.hue = 0;
-			colorSwap.saturation = 0;
-			colorSwap.brightness = 0;
-			} else {
-			colorSwap.hue = ClientPrefs.data.arrowHSV[noteData % 4][0] / 360;
-			colorSwap.saturation = ClientPrefs.data.arrowHSV[noteData % 4][1] / 100;
-			colorSwap.brightness = ClientPrefs.data.arrowHSV[noteData % 4][2] / 100;
-			}
-		}
-	}
-	
-	public function getIndex(mania:Int, note:Int) {
-		return ExtraKeysHandler.instance.data.keys[mania].notes[note];
-	}
+                // Remember the expected on-screen position so the visibility guard can
+                // recover the strum if a script teleports it off-screen.
+                expectedX = x;
+                expectedY = y;
+        }
 
-	public function getAnimSet(index:Int) {
-		return ExtraKeysHandler.instance.data.animations[index];
-	}
+        override function update(elapsed:Float)
+        {
+                if (resetAnim > 0)
+                {
+                        resetAnim -= elapsed;
+                        if (resetAnim <= 0)
+                        {
+                                playAnim('static');
+                                resetAnim = 0;
+                        }
+                }
+                super.update(elapsed);
+        }
 
-	private function shaderInit() {
-		if (this.useRGBShader)
-			rgbShader.enabled = false;
-		else if (ClientPrefs.data.noteColorSwap){
-			colorSwap.hue = 0;
-			colorSwap.saturation = 0;
-			colorSwap.brightness = 0;
-		}
-	}
+        // ===================================================================================
+        // VISIBILITY ENFORCEMENT
+        // -----------------------------------------------------------------------------------
+        // Runs in draw() (AFTER Lua onUpdatePost). If a script hid this strum (alpha = 0)
+        // but notes are following it, the strum is restored so the track is visible.
+        // Position is also recovered if the strum was teleported far off-screen.
+        // ===================================================================================
+        override public function draw()
+        {
+                if (Note.visibilityGuardEnabled && forceVisible)
+                        enforceVisibility();
+                super.draw();
+        }
+
+        public function enforceVisibility():Void
+        {
+                var hasNotes:Bool = activeNotesCount > 0;
+
+                // --- Position recovery ---
+                // Only if the strum was moved way off-screen while notes are following it.
+                if (hasNotes && (expectedX != 0 || expectedY != 0))
+                {
+                        if (x < -500 || x > FlxG.width + 500 || y < -500 || y > FlxG.height + 500)
+                        {
+                                x = expectedX;
+                                y = expectedY;
+                        }
+                }
+
+                // --- Alpha recovery ---
+                if (alpha > 0.01) return; // already visible
+                if (!hasNotes) return; // no notes following — allow intentional hiding
+                alpha = 1.0;
+        }
+
+        public function release():Void
+        {
+                if (animation.curAnim != null && animation.curAnim.name == 'confirm' && confirmStamp >= 0)
+                {
+                        var shown:Float = haxe.Timer.stamp() - confirmStamp;
+                        if (shown < CONFIRM_MIN)
+                        {
+                                resetAnim = CONFIRM_MIN - shown;
+                                return;
+                        }
+                }
+                playAnim('static');
+                resetAnim = 0;
+        }
+
+        public function playAnim(anim:String, ?force:Bool = false)
+        {
+                if (anim == 'confirm')
+                {
+                        confirmStamp = haxe.Timer.stamp();
+                        resetAnim = 0;
+                }
+                animation.play(anim, force);
+                if (animation.curAnim != null)
+                {
+                        centerOffsets();
+                        centerOrigin();
+                }
+                if (useRGBShader)
+                        rgbShader.enabled = (animation.curAnim != null && animation.curAnim.name != 'static');
+                else if (ClientPrefs.data.noteColorSwap){
+                        if(animation.curAnim == null || animation.curAnim.name == 'static') {
+                        colorSwap.hue = 0;
+                        colorSwap.saturation = 0;
+                        colorSwap.brightness = 0;
+                        } else {
+                        colorSwap.hue = ClientPrefs.data.arrowHSV[noteData % 4][0] / 360;
+                        colorSwap.saturation = ClientPrefs.data.arrowHSV[noteData % 4][1] / 100;
+                        colorSwap.brightness = ClientPrefs.data.arrowHSV[noteData % 4][2] / 100;
+                        }
+                }
+        }
+        
+        public function getIndex(mania:Int, note:Int) {
+                return ExtraKeysHandler.instance.data.keys[mania].notes[note];
+        }
+
+        public function getAnimSet(index:Int) {
+                return ExtraKeysHandler.instance.data.animations[index];
+        }
+
+        private function shaderInit() {
+                if (this.useRGBShader)
+                        rgbShader.enabled = false;
+                else if (ClientPrefs.data.noteColorSwap){
+                        colorSwap.hue = 0;
+                        colorSwap.saturation = 0;
+                        colorSwap.brightness = 0;
+                }
+        }
 }
 
 class StrumBoundaries {
-	public static var minBoundaryOpponent:FlxPoint = new FlxPoint(30, 50);
-	public static var maxBoundaryOpponent:FlxPoint = new FlxPoint(630, 160);
+        public static var minBoundaryOpponent:FlxPoint = new FlxPoint(30, 50);
+        public static var maxBoundaryOpponent:FlxPoint = new FlxPoint(630, 160);
 
-	public static function getMiddlePoint():FlxPoint {
-		return new FlxPoint(Std.int(getBoundaryWidth().x/2),Std.int(getBoundaryWidth().y/2));
-	}
+        public static function getMiddlePoint():FlxPoint {
+                return new FlxPoint(Std.int(getBoundaryWidth().x/2),Std.int(getBoundaryWidth().y/2));
+        }
 
-	public static function getBoundaryWidth():FlxPoint {
-		return new FlxPoint(Std.int((maxBoundaryOpponent.x - minBoundaryOpponent.x)),Std.int((maxBoundaryOpponent.y - minBoundaryOpponent.y)));
-	}
+        public static function getBoundaryWidth():FlxPoint {
+                return new FlxPoint(Std.int((maxBoundaryOpponent.x - minBoundaryOpponent.x)),Std.int((maxBoundaryOpponent.y - minBoundaryOpponent.y)));
+        }
 }
 
 class KeybindShowcase extends FlxTypedGroup<FlxBasic>
 {
-	public var background:FlxSprite;
-	public var keyText:FlxText;
-	public var keyCodes:Array<Int> = [];
+        public var background:FlxSprite;
+        public var keyText:FlxText;
+        public var keyCodes:Array<Int> = [];
 
-	public var keystart1Timer:FlxTimer;
-	public var keystart2Timer:FlxTimer;
+        public var keystart1Timer:FlxTimer;
+        public var keystart2Timer:FlxTimer;
 
-	public var keytween1:FlxTween;
-	public var keytween2:FlxTween;
-	public var keytween3:FlxTween;
+        public var keytween1:FlxTween;
+        public var keytween2:FlxTween;
+        public var keytween3:FlxTween;
 
-	public dynamic function onComplete():Void
-	{
-	}
+        public dynamic function onComplete():Void
+        {
+        }
 
-	public function new(x:Float, y:Float, keyCodes:Array<Int>, camera:FlxCamera, strumHalved:Float, mania:Int)
-	{
-		super();
+        public function new(x:Float, y:Float, keyCodes:Array<Int>, camera:FlxCamera, strumHalved:Float, mania:Int)
+        {
+                super();
 
-		this.keyCodes = keyCodes;
+                this.keyCodes = keyCodes;
 
-		var xOffset = x + strumHalved;
+                var xOffset = x + strumHalved;
 
-		var size = 20 - (mania - 3);
+                var size = 20 - (mania - 3);
 
-		keyText = new FlxText(xOffset + 4, y + 4, InputFormatter.getKeyName(keyCodes[0]));
-		keyText.setFormat(Paths.font("vcr.ttf"), size, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
-		keyText.x -= keyText.width / 2;
-		xOffset = keyText.x;
+                keyText = new FlxText(xOffset + 4, y + 4, InputFormatter.getKeyName(keyCodes[0]));
+                keyText.setFormat(Paths.font("vcr.ttf"), size, FlxColor.WHITE, CENTER, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
+                keyText.x -= keyText.width / 2;
+                xOffset = keyText.x;
 
-		background = new FlxSprite(xOffset - 4, y);
-		background.makeGraphic(Std.int(keyText.width + 8), Std.int(keyText.height + 8), 0xFF000000);
-		background.alpha = 0.5;
+                background = new FlxSprite(xOffset - 4, y);
+                background.makeGraphic(Std.int(keyText.width + 8), Std.int(keyText.height + 8), 0xFF000000);
+                background.alpha = 0.5;
 
-		add(background);
-		add(keyText);
+                add(background);
+                add(keyText);
 
-		background.cameras = [camera];
-		keyText.cameras = [camera];
+                background.cameras = [camera];
+                keyText.cameras = [camera];
 
-		if (keystart1Timer != null)
-			keystart1Timer.cancel();
-		if (keystart2Timer != null)
-			keystart2Timer.cancel();
+                if (keystart1Timer != null)
+                        keystart1Timer.cancel();
+                if (keystart2Timer != null)
+                        keystart2Timer.cancel();
 
-		if (keytween1 != null)
-			keytween1.cancel();
-		if (keytween2 != null)
-			keytween2.cancel();
-		if (keytween3 != null)
-			keytween3.cancel();
+                if (keytween1 != null)
+                        keytween1.cancel();
+                if (keytween2 != null)
+                        keytween2.cancel();
+                if (keytween3 != null)
+                        keytween3.cancel();
 
-		keystart1Timer = new FlxTimer().start(2, function(tmr:FlxTimer)
-		{
-			keytween1 = FlxTween.tween(keyText, {alpha: 0}, 0.5, {
-				ease: FlxEase.linear,
-				onComplete: function(t)
-				{
-					keytween1 = null;
+                keystart1Timer = new FlxTimer().start(2, function(tmr:FlxTimer)
+                {
+                        keytween1 = FlxTween.tween(keyText, {alpha: 0}, 0.5, {
+                                ease: FlxEase.linear,
+                                onComplete: function(t)
+                                {
+                                        keytween1 = null;
 
-					if (keyCodes.length > 1)
-					{
-						keyText.text = InputFormatter.getKeyName(keyCodes[1]);
-					}
-					else
-					{
-						keyText.text = '---';
-					}
+                                        if (keyCodes.length > 1)
+                                        {
+                                                keyText.text = InputFormatter.getKeyName(keyCodes[1]);
+                                        }
+                                        else
+                                        {
+                                                keyText.text = '---';
+                                        }
 
-					keytween2 = FlxTween.tween(keyText, {alpha: 1}, 0.5);
+                                        keytween2 = FlxTween.tween(keyText, {alpha: 1}, 0.5);
 
-					if (background.velocity != null)
-					{
-						keyText.x = x + strumHalved + 4;
-						keyText.x -= keyText.width / 2;
-						xOffset = keyText.x;
-						background.x = xOffset - 4;
-						background.makeGraphic(Std.int(keyText.width + 8), Std.int(keyText.height + 8), 0xFF000000);
-						keystart2Timer = new FlxTimer().start(2.5, function(tmr:FlxTimer)
-						{
-							keytween3 = FlxTween.tween(keyText, {alpha: 0}, 0.5, {
-								ease: FlxEase.linear,
-								onComplete: function(t)
-								{
-									onComplete();
+                                        if (background.velocity != null)
+                                        {
+                                                keyText.x = x + strumHalved + 4;
+                                                keyText.x -= keyText.width / 2;
+                                                xOffset = keyText.x;
+                                                background.x = xOffset - 4;
+                                                background.makeGraphic(Std.int(keyText.width + 8), Std.int(keyText.height + 8), 0xFF000000);
+                                                keystart2Timer = new FlxTimer().start(2.5, function(tmr:FlxTimer)
+                                                {
+                                                        keytween3 = FlxTween.tween(keyText, {alpha: 0}, 0.5, {
+                                                                ease: FlxEase.linear,
+                                                                onComplete: function(t)
+                                                                {
+                                                                        onComplete();
 
-									keytween3 = null;
-								}
-							});
-						});
-					}
-				}
-			});
-		});
-	}
+                                                                        keytween3 = null;
+                                                                }
+                                                        });
+                                                });
+                                        }
+                                }
+                        });
+                });
+        }
 }
 
