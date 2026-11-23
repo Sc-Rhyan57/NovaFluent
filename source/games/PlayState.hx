@@ -287,6 +287,7 @@ class PlayState extends MusicBeatState
         public var camGame:FlxCamera;
         public var camOther:FlxCamera;
         public var camNotes:FlxCamera;
+        public var noteCameras:Array<FlxCamera>;
         public var luaVpadCam:FlxCamera;
         public var camPause:FlxCamera;
         public var cameraSpeed:Float = 1;
@@ -449,6 +450,7 @@ class PlayState extends MusicBeatState
                 FlxG.cameras.add(camNotes, false);
                 FlxG.cameras.add(luaVpadCam, false);
                 FlxG.cameras.add(camPause, false);
+                noteCameras = [camNotes];
                 grpNoteSplashes = new FlxTypedGroup<NoteSplash>();
 
                 persistentUpdate = persistentDraw = true;
@@ -2279,6 +2281,7 @@ class PlayState extends MusicBeatState
 
                         strumLineNotes.add(babyArrow);
                         babyArrow.postAddedToGroup();
+                        babyArrow.rememberHome();
                 }
                 // Non-pixel ExtraKeys scales are shared by receptors and falling notes.
                 // Resizing only the receptors from atlas frame bounds desynchronizes custom skins.
@@ -2611,12 +2614,17 @@ class PlayState extends MusicBeatState
                 logSongProgress();
                 if (camNotes != null && camHUD != null)
                 {
-                        camNotes.zoom = camHUD.zoom;
-                        camNotes.angle = camHUD.angle;
-                        camNotes.scroll.x = camHUD.scroll.x;
-                        camNotes.scroll.y = camHUD.scroll.y;
-                        camNotes.alpha = camHUD.alpha;
-                        camNotes.visible = camHUD.visible;
+                        if (MpMatch.active)
+                                lockMultiplayerNoteField();
+                        else
+                        {
+                                camNotes.zoom = camHUD.zoom;
+                                camNotes.angle = camHUD.angle;
+                                camNotes.scroll.x = camHUD.scroll.x;
+                                camNotes.scroll.y = camHUD.scroll.y;
+                                camNotes.alpha = camHUD.alpha;
+                                camNotes.visible = camHUD.visible;
+                        }
                 }
                 // Drain only the system messages that MpMatch.tick() does NOT know
                 // about (playerLoaded, allLoaded).  We pop one at a time and push
@@ -2892,6 +2900,7 @@ class PlayState extends MusicBeatState
                                 {
                                         if (startedCountdown)
                                         {
+                                                lockMultiplayerNoteField();
                                                 var fakeCrochet:Float = (60 / SONG.bpm) * 1000;
                                                 var len:Int = notes.length;
                                                 var i:Int = 0;
@@ -3016,6 +3025,63 @@ class PlayState extends MusicBeatState
 
                 onUpdatePostArgs[0] = elapsed;
                 callOnScripts('onUpdatePost', onUpdatePostArgs);
+                // Scripts in mods often push camHUD / the receptors upward. Put the
+                // notes back on the lanes before this frame is drawn.
+                if (MpMatch.active && startedCountdown)
+                {
+                        lockMultiplayerNoteField();
+                        repositionSpawnedNotes();
+                }
+        }
+
+        function lockMultiplayerNoteField():Void
+        {
+                if (!MpMatch.active || camNotes == null)
+                        return;
+                camNotes.scroll.set(0, 0);
+                camNotes.zoom = 1;
+                camNotes.angle = 0;
+                camNotes.alpha = 1;
+                camNotes.visible = true;
+                if (playerStrums != null)
+                        for (strum in playerStrums)
+                                if (strum != null)
+                                {
+                                        strum.snapHome();
+                                        if (noteCameras != null) strum.cameras = noteCameras;
+                                }
+                if (opponentStrums != null)
+                        for (strum in opponentStrums)
+                                if (strum != null)
+                                {
+                                        strum.snapHome();
+                                        if (noteCameras != null) strum.cameras = noteCameras;
+                                }
+        }
+
+        function repositionSpawnedNotes():Void
+        {
+                if (!generatedMusic || notes == null || !startedCountdown)
+                        return;
+                var fakeCrochet:Float = (60 / SONG.bpm) * 1000;
+                var speed:Float = songSpeed / playbackRate;
+                var i:Int = 0;
+                var len:Int = notes.length;
+                while (i < len)
+                {
+                        var daNote:Note = cast notes.members[i];
+                        if (daNote != null && daNote.exists && daNote.alive)
+                        {
+                                var strumGroup:FlxTypedGroup<StrumNote> = daNote.mustPress ? playerStrums : opponentStrums;
+                                if (strumGroup != null && daNote.noteData >= 0 && daNote.noteData < strumGroup.length)
+                                {
+                                        var strum:StrumNote = strumGroup.members[daNote.noteData];
+                                        if (strum != null)
+                                                daNote.followStrumNote(strum, fakeCrochet, speed);
+                                }
+                        }
+                        i++;
+                }
         }
 
         override function drawUpdate(elapsed:Float) {

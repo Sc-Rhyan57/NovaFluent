@@ -665,13 +665,27 @@ class Note extends FlxSprite
 
 	public function followStrumNote(myStrum:StrumNote, fakeCrochet:Float, songSpeed:Float = 1)
 	{
-		if (!FlxG.isFullFrame) return;
+		if (!FlxG.isFullFrame && !MpMatch.active) return;
 
 		var mania = 3;
 		if (PlayState.SONG != null)	mania = PlayState.SONG.mania;
 		var Mscale = ExtraKeysHandler.instance.data.scales[mania];
 		if (PlayState.isPixelStage) Mscale = ExtraKeysHandler.instance.data.pixelScales[mania];
 		var sWidth = Note.swagWidthUnscaled * Mscale;
+
+		// Mods (and the HUD camera they drive) must not relocate notes in a match.
+		// Scroll stays on the lane that was placed at countdown.
+		if (MpMatch.active)
+		{
+			offsetX = 0;
+			offsetY = 0;
+			copyX = true;
+			copyY = true;
+			if (myStrum != null)
+				myStrum.snapHome();
+			if (PlayState.instance != null && PlayState.instance.noteCameras != null)
+				cameras = PlayState.instance.noteCameras;
+		}
 
 		var strumX:Float = myStrum.x;
 		var strumY:Float = myStrum.y;

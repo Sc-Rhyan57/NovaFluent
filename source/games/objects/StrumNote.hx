@@ -23,6 +23,13 @@ class StrumNote extends FlxSprite
 	public var direction:Float = 90; // plan on doing scroll directions soon -bb
 	public var downScroll:Bool = false; // plan on doing scroll directions soon -bb
 	public var sustainReduce:Bool = true;
+	// Rest pose captured after the receptors are placed. Multiplayer snaps back
+	// here so mod scripts cannot shove the lanes off screen.
+	public var homeX:Float = 0;
+	public var homeY:Float = 0;
+	public var homeDirection:Float = 90;
+	public var homeDownScroll:Bool = false;
+	public var homeReady:Bool = false;
 
 	public var trackedScale:Float = 0.7;
 	public var player:Int;
@@ -190,6 +197,26 @@ class StrumNote extends FlxSprite
 		ID = noteData;
 
 		centerStrum(minPaddingStartThresh, padding);
+	}
+
+	public function rememberHome():Void
+	{
+		homeX = x;
+		homeY = y;
+		homeDirection = direction;
+		homeDownScroll = downScroll;
+		homeReady = true;
+	}
+
+	public function snapHome():Void
+	{
+		if (!homeReady)
+			return;
+		x = homeX;
+		y = homeY;
+		angle = 0;
+		direction = homeDirection;
+		downScroll = homeDownScroll;
 	}
 
 	/**
